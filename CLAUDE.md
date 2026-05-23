@@ -27,6 +27,18 @@ Test:
 
 Lint / format: `npm run lint` (eslint --fix) and `npm run format` (prettier).
 
+Typecheck: `npm run typecheck` (`tsc --noEmit` — strict mode is enabled in `tsconfig.json`).
+
+## After making changes
+
+Before reporting any code change as done, run all three and make sure they pass:
+
+1. `npm run lint`
+2. `npm run typecheck`
+3. `npm test` (and `npm run test:e2e` if you touched anything covered by e2e)
+
+Fix any failures before handing back. The Node version is pinned in `.nvmrc` (run `nvm use` if your shell version drifts).
+
 ## Conventions
 
 - Two test configs coexist: unit tests live next to source as `*.spec.ts` with `rootDir: src` (config in `package.json`); e2e tests live in `test/` as `*.e2e-spec.ts` with their own `test/jest-e2e.json`. Don't mix the two.
