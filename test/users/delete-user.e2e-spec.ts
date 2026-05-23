@@ -1,7 +1,7 @@
 import request from 'supertest';
-import { createTestApp, TestAppContext } from './helpers/create-test-app';
+import { createTestApp, TestAppContext } from '../helpers/create-test-app';
 
-describe('GET /', () => {
+describe('DELETE /users/:id', () => {
   let ctx: TestAppContext;
 
   beforeAll(async () => {
@@ -12,10 +12,10 @@ describe('GET /', () => {
     await ctx.close();
   });
 
-  it('returns the hello message', () => {
+  it('removes a user', () => {
     return request(ctx.app.getHttpServer())
-      .get('/')
+      .delete('/users/42')
       .expect(200)
-      .expect('Hello World!');
+      .expect('This action removes a #42 user');
   });
 });

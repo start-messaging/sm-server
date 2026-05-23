@@ -1,7 +1,7 @@
 import request from 'supertest';
-import { createTestApp, TestAppContext } from './helpers/create-test-app';
+import { createTestApp, TestAppContext } from '../helpers/create-test-app';
 
-describe('GET /', () => {
+describe('PATCH /users/:id', () => {
   let ctx: TestAppContext;
 
   beforeAll(async () => {
@@ -12,10 +12,11 @@ describe('GET /', () => {
     await ctx.close();
   });
 
-  it('returns the hello message', () => {
+  it('updates a user', () => {
     return request(ctx.app.getHttpServer())
-      .get('/')
+      .patch('/users/42')
+      .send({})
       .expect(200)
-      .expect('Hello World!');
+      .expect('This action updates a #42 user');
   });
 });

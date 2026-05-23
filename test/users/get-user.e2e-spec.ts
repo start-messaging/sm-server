@@ -1,7 +1,7 @@
 import request from 'supertest';
-import { createTestApp, TestAppContext } from './helpers/create-test-app';
+import { createTestApp, TestAppContext } from '../helpers/create-test-app';
 
-describe('GET /', () => {
+describe('GET /users/:id', () => {
   let ctx: TestAppContext;
 
   beforeAll(async () => {
@@ -12,10 +12,10 @@ describe('GET /', () => {
     await ctx.close();
   });
 
-  it('returns the hello message', () => {
+  it('returns a single user by id', () => {
     return request(ctx.app.getHttpServer())
-      .get('/')
+      .get('/users/42')
       .expect(200)
-      .expect('Hello World!');
+      .expect('This action returns a #42 user');
   });
 });
