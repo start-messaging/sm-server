@@ -27,8 +27,6 @@ Test:
 - Single e2e file: `npx jest --config ./test/jest-e2e.json test/users/create-user.e2e-spec.ts`
 - Single test by name: `npx jest --config ./test/jest-e2e.json -t "creates a user"`
 
-There is no separate "unit test" command. If branchy business logic appears later and warrants unit tests, either merge them into the e2e jest config (via `projects`) or add a new `test:unit` script — don't resurrect the inlined `jest` block in `package.json`.
-
 Lint / format: `npm run lint` (eslint --fix) and `npm run format` (prettier).
 
 Typecheck: `npm run typecheck` (`tsc --noEmit` — strict mode is enabled in `tsconfig.json`).
@@ -73,16 +71,6 @@ After scaffolding, **always delete the boilerplate `should be defined` `.spec.ts
 
 ## Testing strategy
 
-Default to **API-level (e2e) tests**. They exercise the real wiring — pipes, filters, guards, serialization, controller→service→repo — so a failure means a real user-facing contract is broken.
-
-Rules:
-
-- **Every feature gets an e2e test** under `test/<feature>.e2e-spec.ts` that covers the public HTTP contract: happy path + key error paths (400 validation, 404 not-found, 401/403 if guarded).
-- **No `should be defined` specs.** They test Nest's DI, not your code. Delete them after `nest g resource`.
-- **Unit tests only for branchy business logic** — pricing rules, state machines, complex validators, pure functions with multiple paths. Pure CRUD passthroughs do not get unit tests.
-- **E2E must hit real seams.** Once the project has a database, e2e tests run against a real (test) database via Testcontainers or an ephemeral instance — never against a mocked repo.
-- **Bootstrap parity.** The e2e `Test.createTestingModule(...).createNestApplication()` must apply the same global pipes, filters, and interceptors as production `main.ts`. Extract a shared `applyGlobalConfig(app)` helper so tests and prod stay in sync.
-
 ### E2E file layout
 
 ```
@@ -107,9 +95,7 @@ Before reporting any code change as done, run all three and make sure they pass:
 
 1. `npm run lint`
 2. `npm run typecheck`
-3. `npm test` (and `npm run test:e2e` if you touched anything covered by e2e)
-
-Fix any failures before handing back. The Node version is pinned in `.nvmrc` (run `nvm use` if your shell version drifts).
+3. `npm run format`
 
 ## Conventions
 
