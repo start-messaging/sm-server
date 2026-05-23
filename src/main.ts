@@ -4,7 +4,7 @@ import { applyGlobalConfig } from './config/apply-global-config';
 import { setupSwagger } from './config/swagger.config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
   applyGlobalConfig(app);
   setupSwagger(app);
   await app.listen(process.env.PORT ?? 3000);
