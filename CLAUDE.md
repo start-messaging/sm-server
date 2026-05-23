@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `sm-server` is a NestJS 11 (TypeScript) application bootstrapped from the standard `@nestjs/cli` starter. It currently contains only the default `AppModule` / `AppController` / `AppService` scaffolding — no domain code has been added yet.
 
-Entry point: `src/main.ts` boots `AppModule` and listens on `process.env.PORT ?? 3000`.
+Entry point: `src/main.ts` boots `AppModule`, wires Swagger via `setupSwagger()` from [src/config/swagger.config.ts](src/config/swagger.config.ts), and listens on `process.env.PORT ?? 3000`.
+
+OpenAPI / Swagger docs are served at `/api` (UI), `/api/json`, and `/api/yaml`. The `@nestjs/swagger` CLI plugin is enabled in [nest-cli.json](nest-cli.json) so DTO/response types are inferred without manual `@ApiProperty` on every field.
 
 ## Commands
 
@@ -43,3 +45,17 @@ Fix any failures before handing back. The Node version is pinned in `.nvmrc` (ru
 
 - Two test configs coexist: unit tests live next to source as `*.spec.ts` with `rootDir: src` (config in `package.json`); e2e tests live in `test/` as `*.e2e-spec.ts` with their own `test/jest-e2e.json`. Don't mix the two.
 - `nest-cli.json` sets `deleteOutDir: true`, so `nest build` wipes `dist/` on every build.
+
+## Code style — best practices and scalable structure
+
+Always write code that scales. Do not pile unrelated concerns into one file.
+
+- **One concern per file.** A controller file holds the controller; a service file holds the service; a DTO file holds the DTO. Configuration (e.g. Swagger, CORS, validation pipes) lives under `src/config/`, not in `main.ts`.
+- **Feature-first folders.** Group code by feature/domain (e.g. `src/users/`, `src/orders/`), not by technical type (`src/controllers/`, `src/services/`). Each feature folder owns its module, controllers, services, DTOs, and entities.
+- **Layer the responsibilities.** Controllers stay thin (routing, validation, serialization). Services hold business logic. Repositories / data-access live separately. Don't call the database from a controller.
+- **DTOs over inline shapes.** Use class-based DTOs for request and response bodies under `<feature>/dto/`. They give Swagger types, validation (`class-validator`), and transformation (`class-transformer`) for free.
+- **Encapsulate via modules.** Each feature exports a `*.module.ts` that declares its providers and only re-exports what other modules actually need.
+- **Configuration via `@nestjs/config` and env vars.** No hard-coded secrets, ports, URLs, or feature flags inside business code.
+- **No "god files."** If a file passes ~200 lines or mixes two responsibilities, split it before adding to it.
+
+When in doubt, prefer adding a new small file over extending an existing one.
