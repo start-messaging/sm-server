@@ -1,7 +1,8 @@
 import request from 'supertest';
 import { createTestApp, TestAppContext } from '../helpers/create-test-app';
+import { asSuccess } from '../helpers/envelope';
 
-describe('GET /users', () => {
+describe('GET /v1/users', () => {
   let ctx: TestAppContext;
 
   beforeAll(async () => {
@@ -12,10 +13,14 @@ describe('GET /users', () => {
     await ctx.close();
   });
 
-  it('lists all users', () => {
-    return request(ctx.app.getHttpServer())
-      .get('/users')
-      .expect(200)
-      .expect('This action returns all users');
+  it('lists all users wrapped in the success envelope', async () => {
+    const res = await request(ctx.app.getHttpServer())
+      .get('/v1/users')
+      .expect(200);
+    const body = asSuccess<Array<{ id: number }>>(res.body);
+
+    expect(body.data).toEqual([{ id: 1 }, { id: 42 }]);
+    expect(body.meta.requestId).toEqual(expect.any(String));
+    expect(res.headers['x-request-id']).toBe(body.meta.requestId);
   });
 });

@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
+import { applyGlobalConfig } from '../../src/config/apply-global-config';
 
 export interface TestAppContext {
   app: INestApplication<App>;
@@ -13,9 +14,11 @@ export async function createTestApp(): Promise<TestAppContext> {
     imports: [AppModule],
   }).compile();
 
-  const app: INestApplication<App> = moduleFixture.createNestApplication();
-  // Global pipes / filters / interceptors will be applied here via a shared
-  // applyGlobalConfig(app) helper once error handling lands.
+  const app: INestApplication<App> = moduleFixture.createNestApplication({
+    bufferLogs: true,
+  });
+
+  applyGlobalConfig(app);
   await app.init();
 
   return {
