@@ -1,41 +1,45 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { AppException } from '../common/exceptions/app.exception';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { User } from './entities/user.entity';
 
 @Injectable()
 export class UsersService {
-  private readonly known = new Set<number>([1, 42]);
+  constructor(
+    @InjectRepository(User) private readonly users: Repository<User>,
+  ) {}
 
-  create(_createUserDto: CreateUserDto) {
-    return { id: 99, message: 'created' };
+  create(dto: CreateUserDto): Promise<User> {
+    const user = this.users.create(dto);
+    return this.users.save(user);
   }
 
-  findAll() {
-    return [{ id: 1 }, { id: 42 }];
+  findAll(): Promise<User[]> {
+    return this.users.find();
   }
 
-  findOne(id: number) {
-    this.assertExists(id);
-    return { id };
-  }
-
-  update(id: number, _updateUserDto: UpdateUserDto) {
-    this.assertExists(id);
-    return { id, updated: true };
-  }
-
-  remove(id: number) {
-    this.assertExists(id);
-    return { id, deleted: true };
-  }
-
-  private assertExists(id: number): void {
-    if (!this.known.has(id)) {
+  async findOne(id: string): Promise<User> {
+    const user = await this.users.findOne({ where: { id } });
+    if (!user) {
       throw new AppException(
         { code: 'USER_NOT_FOUND', message: `User ${id} not found` },
         404,
       );
     }
+    return user;
+  }
+
+  async update(id: string, dto: UpdateUserDto): Promise<User> {
+    const user = await this.findOne(id);
+    Object.assign(user, dto);
+    return this.users.save(user);
+  }
+
+  async remove(id: string): Promise<void> {
+    const user = await this.findOne(id);
+    await this.users.softRemove(user);
   }
 }

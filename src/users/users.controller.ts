@@ -3,8 +3,9 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
 } from '@nestjs/common';
@@ -33,7 +34,7 @@ export class UsersController {
   @Get(':id')
   @ApiErrorResponse({ status: 400, code: 'VALIDATION_ERROR' })
   @ApiErrorResponse({ status: 404, code: 'USER_NOT_FOUND' })
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.findOne(id);
   }
 
@@ -41,16 +42,17 @@ export class UsersController {
   @ApiErrorResponse({ status: 400, code: 'VALIDATION_ERROR' })
   @ApiErrorResponse({ status: 404, code: 'USER_NOT_FOUND' })
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateUserDto: UpdateUserDto,
   ) {
     return this.usersService.update(id, updateUserDto);
   }
 
   @Delete(':id')
+  @HttpCode(204)
   @ApiErrorResponse({ status: 400, code: 'VALIDATION_ERROR' })
   @ApiErrorResponse({ status: 404, code: 'USER_NOT_FOUND' })
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.remove(id);
   }
 }
