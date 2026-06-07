@@ -6,6 +6,12 @@ export const envValidationSchema = Joi.object({
     .default('development'),
   PORT: Joi.number().port().default(3000),
 
+  // Comma-separated browser origins allowed to call the API (CORS). Defaults to
+  // the two dev SPAs; lock down to real domains in production.
+  CORS_ORIGINS: Joi.string().default(
+    'http://localhost:5173,http://localhost:5174',
+  ),
+
   DB_HOST: Joi.string().required(),
   DB_PORT: Joi.number().port().default(5432),
   DB_USERNAME: Joi.string().required(),
@@ -50,6 +56,7 @@ export const envValidationSchema = Joi.object({
 export interface EnvVars {
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
+  CORS_ORIGINS: string;
 
   DB_HOST: string;
   DB_PORT: number;
