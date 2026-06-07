@@ -1,5 +1,9 @@
 import * as Joi from 'joi';
 
+/** Dev default CORS allowlist: the client + admin SPA dev servers. */
+export const DEFAULT_CORS_ORIGINS =
+  'http://localhost:5173,http://localhost:5174';
+
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
@@ -8,9 +12,7 @@ export const envValidationSchema = Joi.object({
 
   // Comma-separated browser origins allowed to call the API (CORS). Defaults to
   // the two dev SPAs; lock down to real domains in production.
-  CORS_ORIGINS: Joi.string().default(
-    'http://localhost:5173,http://localhost:5174',
-  ),
+  CORS_ORIGINS: Joi.string().default(DEFAULT_CORS_ORIGINS),
 
   DB_HOST: Joi.string().required(),
   DB_PORT: Joi.number().port().default(5432),

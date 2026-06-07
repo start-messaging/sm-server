@@ -30,14 +30,17 @@ export interface RotatedSession {
 }
 
 const sessKey = (sid: string): string => `sess:${sid}`;
-const refreshKey = (hash: string): string => `refresh:${hash}`;
 const subjectKey = (t: AuthSubject, id: string): string => `subject:${t}:${id}`;
 
 /**
  * Redis-backed sessions. The access JWT carries a `sid`; the auth guards check
  * `sess:{sid}` on every request, so revoking a session logs the user out
- * instantly (not just at refresh time). Refresh tokens are opaque and stored
- * only as a SHA-256 hash.
+ * instantly (not just at refresh time).
+ *
+ * The refresh token is `${sid}.${secret}` — it carries its own session id, so a
+ * replayed (already-rotated) token is still traceable to its session and we can
+ * detect reuse. Only the SHA-256 hash of the *current* token is stored, on the
+ * session record itself; there is no separate refresh→sid index.
  */
 @Injectable()
 export class SessionStore {
@@ -52,25 +55,35 @@ export class SessionStore {
     return this.config.get('JWT_REFRESH_TTL_DAYS', { infer: true }) * 86_400;
   }
 
+  /** Refresh token format: `${sid}.${secret}` — self-identifying for reuse detection. */
+  private makeRefreshToken(sid: string): string {
+    return `${sid}.${this.hash.randomToken(32)}`;
+  }
+
+  /** Extract the session id from a `${sid}.${secret}` refresh token, or null. */
+  private sidFromRefreshToken(token: string): string | null {
+    const dot = token.indexOf('.');
+    if (dot <= 0 || dot === token.length - 1) return null;
+    return token.slice(0, dot);
+  }
+
   async issue(
     subjectType: AuthSubject,
     subjectId: string,
     ctx: AuthContext = {},
   ): Promise<IssuedSession> {
     const sid = this.hash.randomToken(16);
-    const refreshToken = this.hash.randomToken(32);
-    const refreshHash = this.hash.sha256(refreshToken);
+    const refreshToken = this.makeRefreshToken(sid);
     const ttl = this.ttlSeconds();
     const record: SessionRecord = {
       subjectType,
       subjectId,
-      refreshHash,
+      refreshHash: this.hash.sha256(refreshToken),
       ip: ctx.ip ?? null,
       userAgent: ctx.userAgent ?? null,
       createdAt: new Date().toISOString(),
     };
     await this.redis.set(sessKey(sid), JSON.stringify(record), ttl);
-    await this.redis.set(refreshKey(refreshHash), sid, ttl);
     await this.redis.sadd(subjectKey(subjectType, subjectId), sid);
     await this.redis.expire(subjectKey(subjectType, subjectId), ttl);
     this.logger.log(
@@ -90,22 +103,37 @@ export class SessionStore {
     expectedSubject: AuthSubject,
     ctx: AuthContext = {},
   ): Promise<RotatedSession> {
-    const oldHash = this.hash.sha256(refreshToken);
-    const sid = await this.redis.get(refreshKey(oldHash));
+    const sid = this.sidFromRefreshToken(refreshToken);
     if (!sid) throw this.invalid();
     const raw = await this.redis.get(sessKey(sid));
     if (!raw) throw this.invalid();
     const record = JSON.parse(raw) as SessionRecord;
     if (record.subjectType !== expectedSubject) throw this.invalid();
 
-    const newToken = this.hash.randomToken(32);
-    const newHash = this.hash.sha256(newToken);
+    // Reuse detection: the session is alive but this is NOT its current refresh
+    // token → a consumed (already-rotated) token is being replayed. Treat it as
+    // theft and revoke the whole session, so neither the attacker nor the victim
+    // can keep refreshing. (See [decisions.md] refresh-token rotation + reuse.)
+    if (this.hash.sha256(refreshToken) !== record.refreshHash) {
+      this.logger.warn(
+        {
+          event: 'session.refresh.reuse',
+          subjectType: record.subjectType,
+          subjectId: record.subjectId,
+          sid,
+          ip: ctx.ip,
+        },
+        'SessionStore',
+      );
+      await this.revoke(sid);
+      throw this.invalid();
+    }
+
+    const newToken = this.makeRefreshToken(sid);
     const ttl = this.ttlSeconds();
-    record.refreshHash = newHash;
+    record.refreshHash = this.hash.sha256(newToken);
     if (ctx.ip) record.ip = ctx.ip;
     if (ctx.userAgent) record.userAgent = ctx.userAgent;
-    await this.redis.del(refreshKey(oldHash));
-    await this.redis.set(refreshKey(newHash), sid, ttl);
     await this.redis.set(sessKey(sid), JSON.stringify(record), ttl);
     await this.redis.expire(
       subjectKey(record.subjectType, record.subjectId),
@@ -123,7 +151,7 @@ export class SessionStore {
     const raw = await this.redis.get(sessKey(sid));
     if (!raw) return;
     const record = JSON.parse(raw) as SessionRecord;
-    await this.redis.del(sessKey(sid), refreshKey(record.refreshHash));
+    await this.redis.del(sessKey(sid));
     await this.redis.srem(
       subjectKey(record.subjectType, record.subjectId),
       sid,
