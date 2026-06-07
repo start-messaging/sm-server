@@ -1,12 +1,14 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { join } from 'path';
+import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import type { EnvVars } from './env.validation';
 
 /**
  * Builds TypeORM options from a validated ConfigService.
  *
- * `synchronize` is forced off — schema is owned by migrations.
+ * `synchronize` is driven by `DB_SYNCHRONIZE` — ON in dev (auto-sync schema
+ * from entities, no migration files needed), OFF in production (use migrations).
  * `autoLoadEntities` lets each feature module register its entities via
  * `TypeOrmModule.forFeature([...])` without a central entity registry.
  */
@@ -23,7 +25,8 @@ export const buildTypeOrmOptions = (
     ? { rejectUnauthorized: false }
     : false,
   logging: config.get('DB_LOGGING', { infer: true }),
-  synchronize: false,
+  namingStrategy: new SnakeNamingStrategy(),
+  synchronize: config.get('DB_SYNCHRONIZE', { infer: true }),
   migrationsRun: false,
   autoLoadEntities: true,
   migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],

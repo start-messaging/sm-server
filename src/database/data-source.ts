@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import { DataSource } from 'typeorm';
+import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { join } from 'path';
 
 loadEnv();
@@ -22,6 +23,7 @@ export default new DataSource({
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
   entities: [join(__dirname, '..', '**', '*.entity.{ts,js}')],
   migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
+  namingStrategy: new SnakeNamingStrategy(),
   synchronize: false,
   logging: process.env.DB_LOGGING === 'true',
 });

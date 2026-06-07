@@ -5,5 +5,7 @@
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "globalSetup": "<rootDir>/helpers/global-setup.ts",
+  "setupFiles": ["<rootDir>/helpers/set-test-env.ts"]
 }
