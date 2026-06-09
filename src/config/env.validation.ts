@@ -14,6 +14,9 @@ export const envValidationSchema = Joi.object({
   // the two dev SPAs; lock down to real domains in production.
   CORS_ORIGINS: Joi.string().default(DEFAULT_CORS_ORIGINS),
 
+  // Admin SPA base URL — used to build staff-invite links in emails.
+  ADMIN_APP_URL: Joi.string().uri().default('http://localhost:5174'),
+
   DB_HOST: Joi.string().required(),
   DB_PORT: Joi.number().port().default(5432),
   DB_USERNAME: Joi.string().required(),
@@ -59,6 +62,7 @@ export interface EnvVars {
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
   CORS_ORIGINS: string;
+  ADMIN_APP_URL: string;
 
   DB_HOST: string;
   DB_PORT: number;

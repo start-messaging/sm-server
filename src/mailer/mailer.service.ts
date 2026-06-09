@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppLogger } from '../common/logger/app-logger.service';
+import type { EnvVars } from '../config/env.validation';
 import { MAIL_PROVIDER } from './mailer.constants';
 import type { MailProvider } from './types/mail-provider.interface';
 
@@ -12,6 +14,7 @@ export class MailerService {
   constructor(
     @Inject(MAIL_PROVIDER) private readonly provider: MailProvider,
     private readonly logger: AppLogger,
+    private readonly config: ConfigService<EnvVars, true>,
   ) {}
 
   async sendOtp(email: string, code: string, purpose: string): Promise<void> {
@@ -34,11 +37,17 @@ export class MailerService {
   }
 
   async sendStaffInvite(email: string, token: string): Promise<void> {
+    const baseUrl = this.config
+      .get('ADMIN_APP_URL', { infer: true })
+      .replace(/\/+$/, '');
+    const link = `${baseUrl}/accept-invite?token=${token}`;
     await this.provider.send({
       to: email,
       subject: 'You have been invited to the admin console',
-      text: `You've been invited as platform staff. Set your password with this invite token: ${token}`,
+      text: `You've been invited as platform staff. Set your password to activate your account: ${link}`,
     });
+    // The link carries the one-time token; never logged outside the dev console
+    // provider.
     this.logger.log(
       {
         event: 'mail.staff_invite.sent',
