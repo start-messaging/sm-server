@@ -8,6 +8,8 @@ import { LoggerModule } from './common/logger/logger.module';
 import { ClsConfigModule } from './config/cls.config';
 import { envValidationSchema } from './config/env.validation';
 import { HttpModule } from './config/http.config';
+import { CountriesModule } from './countries/countries.module';
+import { CurrenciesModule } from './currencies/currencies.module';
 import { DatabaseModule } from './database/database.module';
 import { MailerModule } from './mailer/mailer.module';
 import { RedisModule } from './redis/redis.module';
@@ -33,6 +35,8 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     AdminModule,
     ReferralModule,
+    CurrenciesModule,
+    CountriesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

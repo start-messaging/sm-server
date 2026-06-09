@@ -4,6 +4,7 @@ import * as argon2 from 'argon2';
 import dataSource from '../data-source';
 import { PlatformStaff } from '../../admin/entities/platform-staff.entity';
 import { PlatformRole } from '../../admin/enums/platform-role.enum';
+import { seedReferenceData } from './reference.seed';
 
 loadEnv();
 
@@ -37,6 +38,7 @@ async function seedBootstrapStaff(): Promise<void> {
 async function run(): Promise<void> {
   await dataSource.initialize();
   try {
+    await seedReferenceData();
     await seedBootstrapStaff();
   } finally {
     await dataSource.destroy();
