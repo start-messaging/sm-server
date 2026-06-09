@@ -13,13 +13,15 @@ import { DEFAULT_PASSWORD, uniqueEmail } from './auth';
 import { asSuccess } from './envelope';
 
 export interface SeededStaff {
+  id: string;
   email: string;
   password: string;
 }
 
 /**
  * Create an ACTIVE staff row directly (staff are normally invited, but tests
- * need a ready-to-login account). Bypasses the invite flow via the repo.
+ * need a ready-to-login account). Bypasses the invite flow via the repo and
+ * returns the new row's id so specs don't have to page the list to find it.
  */
 export async function createStaff(
   app: INestApplication,
@@ -30,7 +32,7 @@ export async function createStaff(
     getRepositoryToken(PlatformStaff),
   );
   const passwords = app.get(PasswordService);
-  await repo.save(
+  const saved = await repo.save(
     repo.create({
       email,
       passwordHash: await passwords.hash(DEFAULT_PASSWORD),
@@ -39,7 +41,7 @@ export async function createStaff(
       status: StaffStatus.ACTIVE,
     }),
   );
-  return { email, password: DEFAULT_PASSWORD };
+  return { id: saved.id, email, password: DEFAULT_PASSWORD };
 }
 
 export async function loginStaff(
