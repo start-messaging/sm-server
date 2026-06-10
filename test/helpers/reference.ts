@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Country } from '../../src/countries/entities/country.entity';
 import { Currency } from '../../src/currencies/entities/currency.entity';
 import { ServiceCategory } from '../../src/services/entities/service-category.entity';
@@ -178,12 +178,19 @@ export async function freshCurrencyCode(
   app: INestApplication,
 ): Promise<string> {
   const code = uniqueCurrencyCode();
-  await app
-    .get<Repository<ServiceCountryRate>>(getRepositoryToken(ServiceCountryRate))
-    .delete({ currency: code });
-  await app
-    .get<Repository<Country>>(getRepositoryToken(Country))
-    .delete({ currencyCode: code });
+  const rates = app.get<Repository<ServiceCountryRate>>(
+    getRepositoryToken(ServiceCountryRate),
+  );
+  const countries = app.get<Repository<Country>>(getRepositoryToken(Country));
+
+  await rates.delete({ currency: code });
+  // Countries riding on this currency may carry rate rows in a DIFFERENT
+  // currency — clear those too, or the country delete trips the RESTRICT FK.
+  const dependents = await countries.find({ where: { currencyCode: code } });
+  if (dependents.length > 0) {
+    await rates.delete({ countryCode: In(dependents.map((c) => c.code)) });
+  }
+  await countries.delete({ currencyCode: code });
   await app
     .get<Repository<Currency>>(getRepositoryToken(Currency))
     .delete({ code });

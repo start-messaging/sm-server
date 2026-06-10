@@ -14,6 +14,7 @@ import { CurrentPartner } from './decorators/current-partner.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendOtpDto } from './dto/resend-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ReferralJwtGuard } from './guards/referral-jwt.guard';
 import { ReferralAuthService } from './referral-auth.service';
@@ -24,11 +25,24 @@ import type { AuthenticatedPartner } from './strategies/referral-jwt.strategy';
 export class ReferralAuthController {
   constructor(private readonly referralAuth: ReferralAuthService) {}
 
+  // Re-posting an UNVERIFIED email resumes that registration (201, fresh
+  // token) instead of 409 — EMAIL_TAKEN is only for verified accounts.
   @Post('register')
   @ApiErrorResponse({ status: 400, code: 'VALIDATION_ERROR' })
   @ApiErrorResponse({ status: 409, code: 'EMAIL_TAKEN' })
+  @ApiErrorResponse({ status: 429, code: 'OTP_COOLDOWN' })
   register(@Body() dto: RegisterDto, @Ip() ip: string) {
     return this.referralAuth.register(dto, { ip });
+  }
+
+  // Public; the token is the capability (see /v1/auth/resend-otp).
+  @Post('resend-otp')
+  @HttpCode(200)
+  @ApiErrorResponse({ status: 400, code: 'OTP_INVALID' })
+  @ApiErrorResponse({ status: 409, code: 'EMAIL_ALREADY_VERIFIED' })
+  @ApiErrorResponse({ status: 429, code: 'OTP_COOLDOWN' })
+  resendOtp(@Body() dto: ResendOtpDto) {
+    return this.referralAuth.resendSignupOtp(dto);
   }
 
   @Post('verify-otp')

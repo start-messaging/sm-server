@@ -11,11 +11,16 @@ import { AppLogger } from '../common/logger/app-logger.service';
 import type { EnvVars } from '../config/env.validation';
 import { MailerService } from '../mailer/mailer.service';
 import { OtpPurpose } from '../otp/entities/otp-verification.entity';
+import {
+  presentOtpIssue,
+  type OtpIssueResponse,
+} from '../otp/otp-issue-response';
 import { OtpService } from '../otp/otp.service';
 import { PasswordService } from '../security/password.service';
 import { SessionStore } from '../sessions/session-store.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResendOtpDto } from './dto/resend-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import {
   ReferralPartner,
@@ -55,15 +60,41 @@ export class ReferralAuthService extends EmailAuthService<
   async register(
     dto: RegisterDto,
     ctx: AuthContext,
-  ): Promise<{ verificationToken: string; devCode?: string }> {
+  ): Promise<OtpIssueResponse> {
     const existing = await this.partners.findOne({
       where: { email: dto.email },
     });
     if (existing) {
-      throw new AppException(
-        { code: 'EMAIL_TAKEN', message: 'Email already registered' },
-        409,
+      // Same resumable-signup semantics as customers: an unverified row is a
+      // claim, not an account — overwrite it and re-verify. Verified → 409.
+      if (
+        existing.emailVerified ||
+        existing.status !== ReferralPartnerStatus.PENDING_VERIFICATION
+      ) {
+        throw new AppException(
+          { code: 'EMAIL_TAKEN', message: 'Email already registered' },
+          409,
+        );
+      }
+      existing.passwordHash = await this.passwords.hash(dto.password);
+      existing.fullName = dto.fullName;
+      existing.mobileE164 = dto.mobileE164 ?? null;
+      await this.partners.save(existing);
+      this.logger.log(
+        {
+          event: 'partner.register.overwrite',
+          id: existing.id,
+          email: existing.email,
+          ip: ctx.ip,
+        },
+        'Auth',
       );
+      const issued = await this.ensureEmailVerification(
+        existing.id,
+        existing.email,
+        OtpPurpose.SIGNUP,
+      );
+      return this.otpResponse(issued);
     }
     const partner = await this.partners.save(
       this.partners.create({
@@ -83,14 +114,69 @@ export class ReferralAuthService extends EmailAuthService<
       },
       'Auth',
     );
-    const { verificationToken, code } = await this.startEmailVerification(
+    const issued = await this.startEmailVerification(
       partner.id,
       partner.email,
       OtpPurpose.SIGNUP,
     );
+    return this.otpResponse(issued);
+  }
+
+  /** Public resend for partner signup codes — token is the capability. */
+  async resendSignupOtp(dto: ResendOtpDto): Promise<OtpIssueResponse> {
+    const row = await this.otp.findByToken(dto.verificationToken);
+    if (
+      !row ||
+      row.subjectType !== AuthSubject.REFERRAL ||
+      row.purpose !== OtpPurpose.SIGNUP
+    ) {
+      throw new AppException(
+        { code: 'OTP_INVALID', message: 'Invalid verification token' },
+        400,
+      );
+    }
+    const partner = await this.findById(row.subjectId);
+    if (!partner) {
+      throw new AppException(
+        { code: 'OTP_INVALID', message: 'Invalid verification token' },
+        400,
+      );
+    }
+    if (partner.emailVerified) {
+      throw new AppException(
+        {
+          code: 'EMAIL_ALREADY_VERIFIED',
+          message: 'This email is already verified',
+        },
+        409,
+      );
+    }
+    // Only a live pending registration may pump codes — e.g. a suspended
+    // partner must not be able to re-activate itself via verify-otp.
+    if (partner.status !== ReferralPartnerStatus.PENDING_VERIFICATION) {
+      throw new AppException(
+        { code: 'OTP_INVALID', message: 'Invalid verification token' },
+        400,
+      );
+    }
+    const issued = await this.resendEmailVerification(
+      partner.id,
+      partner.email,
+      OtpPurpose.SIGNUP,
+    );
+    this.logger.log({ event: 'partner.otp.resent', id: partner.id }, 'Auth');
+    return this.otpResponse(issued);
+  }
+
+  private otpResponse(issued: {
+    verificationToken: string;
+    code?: string;
+    expiresInSec?: number;
+    resendCooldownSec?: number;
+  }): OtpIssueResponse {
     const isProd =
       this.config.get('NODE_ENV', { infer: true }) === 'production';
-    return { verificationToken, ...(isProd ? {} : { devCode: code }) };
+    return presentOtpIssue(this.otp, issued, isProd);
   }
 
   async verifyOtp(

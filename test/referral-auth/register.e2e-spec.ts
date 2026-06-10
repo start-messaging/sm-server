@@ -31,12 +31,39 @@ describe('POST /v1/referral/auth/register', () => {
     expect(body.data.devCode).toMatch(/^\d{6}$/);
   });
 
-  it('rejects a duplicate email with 409 EMAIL_TAKEN', async () => {
-    const email = uniqueEmail('dup-partner');
-    await request(ctx.app.getHttpServer())
+  it('resumes an UNVERIFIED registration with 201 and a fresh token', async () => {
+    const email = uniqueEmail('resume-partner');
+    const first = await request(ctx.app.getHttpServer())
       .post('/v1/referral/auth/register')
       .send({ email, password: DEFAULT_PASSWORD, fullName: 'Dup' })
       .expect(201);
+    const firstToken = asSuccess<{ verificationToken: string }>(first.body).data
+      .verificationToken;
+
+    const res = await request(ctx.app.getHttpServer())
+      .post('/v1/referral/auth/register')
+      .send({ email, password: DEFAULT_PASSWORD, fullName: 'Dup Again' })
+      .expect(201);
+    const body = asSuccess<{ verificationToken: string; devCode: string }>(
+      res.body,
+    );
+    expect(body.data.verificationToken).not.toBe(firstToken);
+    expect(body.data.devCode).toMatch(/^\d{6}$/);
+  });
+
+  it('rejects a VERIFIED duplicate email with 409 EMAIL_TAKEN', async () => {
+    const email = uniqueEmail('dup-partner');
+    const reg = await request(ctx.app.getHttpServer())
+      .post('/v1/referral/auth/register')
+      .send({ email, password: DEFAULT_PASSWORD, fullName: 'Dup' })
+      .expect(201);
+    const issue = asSuccess<{ verificationToken: string; devCode: string }>(
+      reg.body,
+    ).data;
+    await request(ctx.app.getHttpServer())
+      .post('/v1/referral/auth/verify-otp')
+      .send({ verificationToken: issue.verificationToken, code: issue.devCode })
+      .expect(200);
 
     const res = await request(ctx.app.getHttpServer())
       .post('/v1/referral/auth/register')

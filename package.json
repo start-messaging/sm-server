@@ -39,6 +39,7 @@
     "dotenv": "^16.6.1",
     "ioredis": "^5.11.1",
     "joi": "^17.13.3",
+    "libphonenumber-js": "^1.13.6",
     "nestjs-cls": "^6.2.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

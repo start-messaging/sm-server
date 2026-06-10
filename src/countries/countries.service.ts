@@ -6,6 +6,10 @@ import { AppLogger } from '../common/logger/app-logger.service';
 import { paginate, type Paginated } from '../common/types/pagination';
 import { CurrenciesService } from '../currencies/currencies.service';
 import { presentCountry, type CountryProfile } from './country-profile';
+import {
+  presentPublicCountry,
+  type CountryPublicProfile,
+} from './country-public-profile';
 import { CountryQueryDto } from './dto/country-query.dto';
 import { CreateCountryDto } from './dto/create-country.dto';
 import { UpdateCountryDto } from './dto/update-country.dto';
@@ -109,6 +113,22 @@ export class CountriesService {
       );
     }
     return country;
+  }
+
+  /** A country only if it exists AND is active; null otherwise (no throw). */
+  findActive(code: string): Promise<Country | null> {
+    return this.countries.findOne({
+      where: { code: code.toUpperCase(), isActive: true },
+    });
+  }
+
+  /** All active countries in the lean public shape (onboarding phone picker). */
+  async listActivePublic(): Promise<CountryPublicProfile[]> {
+    const rows = await this.countries.find({
+      where: { isActive: true },
+      order: { name: 'ASC' },
+    });
+    return rows.map(presentPublicCountry);
   }
 
   /**

@@ -20,3 +20,8 @@ process.env.DB_POOL_MAX = '5';
 // Isolate test Redis keys (sessions, OTPs) from dev on a shared server by using
 // the last logical database index. Dev/prod stay on the default db 0.
 process.env.REDIS_DB = '15';
+
+// Specs and helpers issue OTPs back-to-back (signup → set-mobile → re-issue);
+// the issue cooldown would 429 them. Disabled suite-wide — ONLY the dedicated
+// otp-cooldown spec overrides this (per-file, before createTestApp).
+process.env.OTP_RESEND_COOLDOWN_SEC = '0';

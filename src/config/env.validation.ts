@@ -44,6 +44,9 @@ export const envValidationSchema = Joi.object({
   JWT_REFRESH_TTL_DAYS: Joi.number().default(30),
   OTP_TTL_MIN: Joi.number().default(10),
   OTP_MAX_ATTEMPTS: Joi.number().default(5),
+  // Minimum seconds between OTP issues for the same subject+purpose (any
+  // channel) — caps email/SMS send abuse. 0 disables (tests).
+  OTP_RESEND_COOLDOWN_SEC: Joi.number().min(0).default(60),
 
   // Platform staff auth.
   ADMIN_JWT_ACCESS_SECRET: Joi.string().min(16).required(),
@@ -62,7 +65,23 @@ export const envValidationSchema = Joi.object({
   MAIL_FROM: Joi.string().default('no-reply@localhost'),
   MAILGUN_API_KEY: Joi.string().optional(),
   MAILGUN_DOMAIN: Joi.string().optional(),
-}).unknown(true);
+
+  // SMS (provider is swappable via SMS_DRIVER; only console implemented yet).
+  SMS_DRIVER: Joi.string().valid('console', 'twilio').default('console'),
+})
+  .unknown(true)
+  // Cooldown must fit inside the code's lifetime: if it didn't, an expired
+  // code would still block re-issuing (latest row inside the cooldown window
+  // but no open row) and EVERY user whose code lapsed would be locked out.
+  .custom(
+    (env: { OTP_TTL_MIN: number; OTP_RESEND_COOLDOWN_SEC: number }, helpers) =>
+      env.OTP_RESEND_COOLDOWN_SEC > env.OTP_TTL_MIN * 60
+        ? helpers.message({
+            custom:
+              'OTP_RESEND_COOLDOWN_SEC must not exceed OTP_TTL_MIN * 60 (an expired code would block re-issuing)',
+          })
+        : env,
+  );
 
 export interface EnvVars {
   NODE_ENV: 'development' | 'production' | 'test';
@@ -90,6 +109,7 @@ export interface EnvVars {
   JWT_REFRESH_TTL_DAYS: number;
   OTP_TTL_MIN: number;
   OTP_MAX_ATTEMPTS: number;
+  OTP_RESEND_COOLDOWN_SEC: number;
 
   ADMIN_JWT_ACCESS_SECRET: string;
   ADMIN_JWT_ACCESS_TTL: string;
@@ -103,4 +123,6 @@ export interface EnvVars {
   MAIL_FROM: string;
   MAILGUN_API_KEY?: string;
   MAILGUN_DOMAIN?: string;
+
+  SMS_DRIVER: 'console' | 'twilio';
 }
