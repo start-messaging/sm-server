@@ -3,7 +3,7 @@ import { PlatformRole } from '../../src/admin/enums/platform-role.enum';
 import { createStaff, loginStaff } from '../helpers/admin';
 import { createTestApp, TestAppContext } from '../helpers/create-test-app';
 import { asError, asSuccess } from '../helpers/envelope';
-import { uniqueCurrencyCode } from '../helpers/reference';
+import { freshCurrencyCode, uniqueCurrencyCode } from '../helpers/reference';
 
 interface CurrencyProfile {
   code: string;
@@ -33,7 +33,7 @@ describe('POST /v1/admin/currencies (create)', () => {
       .send(body);
 
   it('lets a SUPER_ADMIN create a currency, normalising code to uppercase', async () => {
-    const code = uniqueCurrencyCode().toLowerCase();
+    const code = (await freshCurrencyCode(ctx.app)).toLowerCase();
     const res = await create({
       code,
       name: 'Test Coin',
@@ -48,7 +48,7 @@ describe('POST /v1/admin/currencies (create)', () => {
 
   it('defaults decimalPlaces to 2 when omitted', async () => {
     const res = await create({
-      code: uniqueCurrencyCode(),
+      code: await freshCurrencyCode(ctx.app),
       name: 'Two Decimals',
       symbol: '¤',
     }).expect(201);
@@ -56,7 +56,7 @@ describe('POST /v1/admin/currencies (create)', () => {
   });
 
   it('rejects a duplicate code with 409 CURRENCY_EXISTS', async () => {
-    const code = uniqueCurrencyCode();
+    const code = await freshCurrencyCode(ctx.app);
     await create({ code, name: 'Dup', symbol: '¤' }).expect(201);
     const res = await create({ code, name: 'Dup again', symbol: '¤' }).expect(
       409,
@@ -84,7 +84,7 @@ describe('POST /v1/admin/currencies (create)', () => {
       adminUser.email,
     );
     await create(
-      { code: uniqueCurrencyCode(), name: 'By admin', symbol: '¤' },
+      { code: await freshCurrencyCode(ctx.app), name: 'By admin', symbol: '¤' },
       adminToken,
     ).expect(201);
   });

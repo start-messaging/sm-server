@@ -21,11 +21,18 @@ Run:
 - `npm run build` && `npm run start:prod` — production build (outputs to `dist/`) and run
 
 Test:
-- `npm test` — **primary test command.** Aliased to `npm run test:e2e`; runs `test/**/*.e2e-spec.ts` against the real app.
+- `npm test` — **primary test command.** Runs `test/**/*.e2e-spec.ts` against the real app, **serially** (`maxWorkers: 1` in `test/jest-e2e.json`).
 - `npm run test:watch` — same suite in watch mode.
-- `npm run test:e2e` — explicit form (kept so the e2e suite has a self-describing name).
 - Single e2e file: `npx jest --config ./test/jest-e2e.json test/users/create-user.e2e-spec.ts`
 - Single test by name: `npx jest --config ./test/jest-e2e.json -t "creates a user"`
+
+**Test isolation (never touch dev data):** every jest entrypoint loads
+`test/helpers/set-test-env.ts` first (via `setupFiles` + a side-effect import in
+`global-setup.ts`), which pins `DB_NAME=sm_server_test` and `REDIS_DB=15` before
+any config loads — dotenv/`@nestjs/config` never override pre-set env vars.
+`global-setup.ts` additionally **hard-refuses** to run unless `DB_NAME` ends with
+`_test`, because it rebuilds the schema with `synchronize(true)` (drops
+everything). Dev `sm_server` (Postgres) and Redis db 0 are never touched by tests.
 
 Lint / format: `npm run lint` (eslint --fix) and `npm run format` (prettier).
 
@@ -99,7 +106,7 @@ Before reporting any code change as done, run all three and make sure they pass:
 
 ## Conventions
 
-- Two test configs coexist: unit tests live next to source as `*.spec.ts` with `rootDir: src` (config in `package.json`); e2e tests live in `test/` as `*.e2e-spec.ts` with their own `test/jest-e2e.json`. Don't mix the two.
+- There is exactly **one** jest config: `test/jest-e2e.json` (e2e specs in `test/` as `*.e2e-spec.ts`). There is no unit-test config — if one is ever added, it MUST also load `test/helpers/set-test-env.ts` via `setupFiles` so it can't touch the dev DB/Redis.
 - `nest-cli.json` sets `deleteOutDir: true`, so `nest build` wipes `dist/` on every build.
 
 ## Code style — best practices and scalable structure

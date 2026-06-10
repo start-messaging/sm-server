@@ -45,7 +45,11 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch((err) => {
-  console.error('[seed] failed:', err);
-  process.exit(1);
-});
+// Only execute when invoked directly (`npm run db:seed`). A transitive import
+// (e.g. from a test picking up data-source helpers) must never seed a database.
+if (require.main === module) {
+  run().catch((err) => {
+    console.error('[seed] failed:', err);
+    process.exit(1);
+  });
+}

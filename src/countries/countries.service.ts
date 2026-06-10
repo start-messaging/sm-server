@@ -92,4 +92,37 @@ export class CountriesService {
     }
     return country;
   }
+
+  /**
+   * Load a country (active or not) for linking a money row to it (e.g. service
+   * pricing). Throws 400 `COUNTRY_NOT_FOUND` — a *bad request body*, not a
+   * missing addressable resource. `code` is normalised to uppercase.
+   */
+  async getForLink(code: string): Promise<Country> {
+    const country = await this.countries.findOne({
+      where: { code: code.toUpperCase() },
+    });
+    if (!country) {
+      throw new AppException(
+        { code: 'COUNTRY_NOT_FOUND', message: 'Country not found' },
+        400,
+      );
+    }
+    return country;
+  }
+
+  /**
+   * Assert a country exists and is active — used before *first* linking a money
+   * row to it (mirrors `CurrenciesService.assertActive`). Returns the row.
+   */
+  async assertActive(code: string): Promise<Country> {
+    const country = await this.getForLink(code);
+    if (!country.isActive) {
+      throw new AppException(
+        { code: 'COUNTRY_INACTIVE', message: 'Country is not active' },
+        400,
+      );
+    }
+    return country;
+  }
 }

@@ -4,8 +4,8 @@ import { createStaff, loginStaff } from '../helpers/admin';
 import { createTestApp, TestAppContext } from '../helpers/create-test-app';
 import { asError, asSuccess } from '../helpers/envelope';
 import {
-  uniqueCountryCode,
-  uniqueCurrencyCode,
+  freshCountryCode,
+  freshCurrencyCode,
   seedCurrency,
 } from '../helpers/reference';
 
@@ -40,7 +40,7 @@ describe('POST /v1/admin/countries (create)', () => {
       .send(body);
 
   it('lets a SUPER_ADMIN create a country, normalising code to uppercase', async () => {
-    const code = uniqueCountryCode().toLowerCase();
+    const code = (await freshCountryCode(ctx.app)).toLowerCase();
     const res = await create({
       code,
       name: 'Testland',
@@ -55,10 +55,10 @@ describe('POST /v1/admin/countries (create)', () => {
 
   it('rejects an unknown currency with 400 CURRENCY_NOT_FOUND', async () => {
     const res = await create({
-      code: uniqueCountryCode(),
+      code: await freshCountryCode(ctx.app),
       name: 'No currency',
       dialCode: '+997',
-      currencyCode: uniqueCurrencyCode(),
+      currencyCode: await freshCurrencyCode(ctx.app),
     }).expect(400);
     expect(asError(res.body).error.code).toBe('CURRENCY_NOT_FOUND');
   });
@@ -66,7 +66,7 @@ describe('POST /v1/admin/countries (create)', () => {
   it('rejects an inactive currency with 400 CURRENCY_INACTIVE', async () => {
     const inactive = await seedCurrency(ctx.app, { isActive: false });
     const res = await create({
-      code: uniqueCountryCode(),
+      code: await freshCountryCode(ctx.app),
       name: 'Inactive currency',
       dialCode: '+996',
       currencyCode: inactive,
@@ -75,7 +75,7 @@ describe('POST /v1/admin/countries (create)', () => {
   });
 
   it('rejects a duplicate code with 409 COUNTRY_EXISTS', async () => {
-    const code = uniqueCountryCode();
+    const code = await freshCountryCode(ctx.app);
     await create({ code, name: 'Dup', dialCode: '+995', currencyCode }).expect(
       201,
     );
@@ -90,7 +90,7 @@ describe('POST /v1/admin/countries (create)', () => {
 
   it('rejects a malformed dialCode with 400', async () => {
     await create({
-      code: uniqueCountryCode(),
+      code: await freshCountryCode(ctx.app),
       name: 'Bad dial',
       dialCode: '0091',
       currencyCode,
@@ -105,7 +105,7 @@ describe('POST /v1/admin/countries (create)', () => {
     );
     await create(
       {
-        code: uniqueCountryCode(),
+        code: await freshCountryCode(ctx.app),
         name: 'Nope',
         dialCode: '+994',
         currencyCode,

@@ -15,6 +15,7 @@ import { MailerModule } from './mailer/mailer.module';
 import { RedisModule } from './redis/redis.module';
 import { ReferralModule } from './referral/referral.module';
 import { SecurityModule } from './security/security.module';
+import { ServicesModule } from './services/services.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { UsersModule } from './users/users.module';
     ReferralModule,
     CurrenciesModule,
     CountriesModule,
+    ServicesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

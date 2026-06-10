@@ -26,11 +26,17 @@ export const envValidationSchema = Joi.object({
   DB_LOGGING: Joi.boolean().default(false),
   // Dev convenience: auto-sync schema from entities. NEVER true in production.
   DB_SYNCHRONIZE: Joi.boolean().default(false),
+  // Max Postgres connections per pool. Bounded small under the e2e suite so
+  // many parallel jest workers (one app each) don't exhaust `max_connections`.
+  DB_POOL_MAX: Joi.number().min(1).default(10),
 
   // Redis — required; sessions live here (instant logout).
   REDIS_HOST: Joi.string().required(),
   REDIS_PORT: Joi.number().port().default(6379),
   REDIS_PASSWORD: Joi.string().allow('').optional(),
+  // Logical Redis database index. Dev/prod use 0; the e2e suite pins 15 so test
+  // keys (sessions, OTPs) never mix with dev data on a shared Redis server.
+  REDIS_DB: Joi.number().integer().min(0).max(15).default(0),
 
   // Customer auth.
   JWT_ACCESS_SECRET: Joi.string().min(16).required(),
@@ -72,10 +78,12 @@ export interface EnvVars {
   DB_SSL: boolean;
   DB_LOGGING: boolean;
   DB_SYNCHRONIZE: boolean;
+  DB_POOL_MAX: number;
 
   REDIS_HOST: string;
   REDIS_PORT: number;
   REDIS_PASSWORD?: string;
+  REDIS_DB: number;
 
   JWT_ACCESS_SECRET: string;
   JWT_ACCESS_TTL: string;

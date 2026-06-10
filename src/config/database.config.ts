@@ -27,6 +27,9 @@ export const buildTypeOrmOptions = (
   logging: config.get('DB_LOGGING', { infer: true }),
   namingStrategy: new SnakeNamingStrategy(),
   synchronize: config.get('DB_SYNCHRONIZE', { infer: true }),
+  // Bound the connection pool so parallel e2e workers (one app each) stay well
+  // under Postgres `max_connections`; tunable per environment.
+  extra: { max: config.get('DB_POOL_MAX', { infer: true }) },
   migrationsRun: false,
   autoLoadEntities: true,
   migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],

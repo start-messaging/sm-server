@@ -1,18 +1,18 @@
 import request from 'supertest';
 import { PlatformRole } from '../../src/admin/enums/platform-role.enum';
+import { ServiceStatus } from '../../src/services/entities/service.entity';
 import { createStaff, loginStaff } from '../helpers/admin';
 import { createTestApp, TestAppContext } from '../helpers/create-test-app';
 import { asError, asSuccess } from '../helpers/envelope';
-import { freshCurrencyCode, seedCurrency } from '../helpers/reference';
+import { freshServiceKey, seedService } from '../helpers/reference';
 
-interface CurrencyProfile {
-  code: string;
+interface ServiceProfile {
+  key: string;
   name: string;
-  decimalPlaces: number;
-  isActive: boolean;
+  status: string;
 }
 
-describe('PATCH /v1/admin/currencies/:code (update)', () => {
+describe('PATCH /v1/admin/services/:key (update)', () => {
   let ctx: TestAppContext;
   let token: string;
 
@@ -26,36 +26,47 @@ describe('PATCH /v1/admin/currencies/:code (update)', () => {
     await ctx.close();
   });
 
-  it('updates name and deactivates the currency', async () => {
-    const code = await seedCurrency(ctx.app);
+  it('updates name and status', async () => {
+    const key = await seedService(ctx.app, {
+      status: ServiceStatus.COMING_SOON,
+    });
     const res = await request(ctx.app.getHttpServer())
-      .patch(`/v1/admin/currencies/${code}`)
+      .patch(`/v1/admin/services/${key}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Renamed', isActive: false })
+      .send({ name: 'Renamed', status: ServiceStatus.ACTIVE })
       .expect(200);
-    const data = asSuccess<CurrencyProfile>(res.body).data;
+    const data = asSuccess<ServiceProfile>(res.body).data;
     expect(data.name).toBe('Renamed');
-    expect(data.isActive).toBe(false);
+    expect(data.status).toBe(ServiceStatus.ACTIVE);
   });
 
-  it('returns 404 CURRENCY_NOT_FOUND for an unknown code', async () => {
+  it('rejects an invalid status with 400', async () => {
+    const key = await seedService(ctx.app);
+    await request(ctx.app.getHttpServer())
+      .patch(`/v1/admin/services/${key}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'banana' })
+      .expect(400);
+  });
+
+  it('returns 404 SERVICE_NOT_FOUND for an unknown key', async () => {
     const res = await request(ctx.app.getHttpServer())
-      .patch(`/v1/admin/currencies/${await freshCurrencyCode(ctx.app)}`)
+      .patch(`/v1/admin/services/${await freshServiceKey(ctx.app)}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Ghost' })
       .expect(404);
-    expect(asError(res.body).error.code).toBe('CURRENCY_NOT_FOUND');
+    expect(asError(res.body).error.code).toBe('SERVICE_NOT_FOUND');
   });
 
   it('forbids SUPPORT with 403', async () => {
-    const code = await seedCurrency(ctx.app);
+    const key = await seedService(ctx.app);
     const support = await createStaff(ctx.app, PlatformRole.SUPPORT);
     const supportToken = await loginStaff(
       ctx.app.getHttpServer(),
       support.email,
     );
     await request(ctx.app.getHttpServer())
-      .patch(`/v1/admin/currencies/${code}`)
+      .patch(`/v1/admin/services/${key}`)
       .set('Authorization', `Bearer ${supportToken}`)
       .send({ name: 'Nope' })
       .expect(403);

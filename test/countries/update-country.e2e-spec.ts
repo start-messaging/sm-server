@@ -4,7 +4,7 @@ import { createStaff, loginStaff } from '../helpers/admin';
 import { createTestApp, TestAppContext } from '../helpers/create-test-app';
 import { asError, asSuccess } from '../helpers/envelope';
 import {
-  uniqueCountryCode,
+  freshCountryCode,
   seedCountry,
   seedCurrency,
 } from '../helpers/reference';
@@ -68,7 +68,7 @@ describe('PATCH /v1/admin/countries/:code (update)', () => {
 
   it('returns 404 COUNTRY_NOT_FOUND for an unknown code', async () => {
     const res = await request(ctx.app.getHttpServer())
-      .patch(`/v1/admin/countries/${uniqueCountryCode()}`)
+      .patch(`/v1/admin/countries/${await freshCountryCode(ctx.app)}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Ghost' })
       .expect(404);

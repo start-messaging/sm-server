@@ -20,6 +20,8 @@ import { RedisService } from './redis.service';
           host: config.get('REDIS_HOST', { infer: true }),
           port: config.get('REDIS_PORT', { infer: true }),
           password: config.get('REDIS_PASSWORD', { infer: true }) || undefined,
+          // Logical DB index — 0 in dev/prod, 15 under e2e (test isolation).
+          db: config.get('REDIS_DB', { infer: true }),
           maxRetriesPerRequest: null,
         }),
     },
