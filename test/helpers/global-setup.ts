@@ -2,18 +2,10 @@ import 'reflect-metadata';
 // Side-effect import: forces DB_NAME=sm_server_test before we read config below,
 // so the schema is built on the test DB (not the dev DB). dotenv won't override.
 import './set-test-env';
+import { join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { DataSource } from 'typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
-import { PlatformStaff } from '../../src/admin/entities/platform-staff.entity';
-import { Country } from '../../src/countries/entities/country.entity';
-import { Currency } from '../../src/currencies/entities/currency.entity';
-import { OtpVerification } from '../../src/otp/entities/otp-verification.entity';
-import { ReferralPartner } from '../../src/referral/entities/referral-partner.entity';
-import { ServiceCategory } from '../../src/services/entities/service-category.entity';
-import { ServiceCountryRate } from '../../src/services/entities/service-country-rate.entity';
-import { Service } from '../../src/services/entities/service.entity';
-import { User } from '../../src/users/entities/user.entity';
 
 /**
  * Build the schema ONCE before the suite (we use TypeORM `synchronize` in dev
@@ -47,17 +39,9 @@ export default async function globalSetup(): Promise<void> {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    entities: [
-      User,
-      OtpVerification,
-      PlatformStaff,
-      ReferralPartner,
-      Currency,
-      Country,
-      Service,
-      ServiceCategory,
-      ServiceCountryRate,
-    ],
+    // Same glob the dev data-source uses — a hand-maintained entity list here
+    // silently drifts (new entities → "relation does not exist" in tests).
+    entities: [join(__dirname, '..', '..', 'src', '**', '*.entity.ts')],
     namingStrategy: new SnakeNamingStrategy(),
     synchronize: false,
   });

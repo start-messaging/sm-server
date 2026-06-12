@@ -39,4 +39,21 @@ export class ServicesPublicService {
       .getMany();
     return rows.map(presentPublicService);
   }
+
+  /**
+   * What the gallery shows: the available services PLUS every `coming_soon`
+   * service as a roadmap teaser (no country/rate filter — teasers aren't
+   * priced yet and should excite every customer). The client tells them apart
+   * by `status`. Workspace creation keeps validating against
+   * `listAvailableForCountry` ONLY, so a teaser can never be created under.
+   */
+  async listForCustomer(countryCode: string): Promise<PublicServiceProfile[]> {
+    const available = await this.listAvailableForCountry(countryCode);
+    const teasers = await this.services.find({
+      where: { status: ServiceStatus.COMING_SOON },
+      relations: { categories: true },
+      order: { key: 'ASC' },
+    });
+    return [...available, ...teasers.map(presentPublicService)];
+  }
 }

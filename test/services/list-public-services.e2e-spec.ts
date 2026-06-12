@@ -31,7 +31,7 @@ describe('GET /v1/services (available in my country)', () => {
     await ctx.close();
   });
 
-  it('lists only active/beta services with an active rate in the user country', async () => {
+  it('lists active/beta services priced in the user country, plus coming-soon teasers', async () => {
     // Onboarded user → country IN (helper seeds it).
     const user = await registerOnboardedUser(ctx.app, ctx.app.getHttpServer());
 
@@ -72,6 +72,7 @@ describe('GET /v1/services (available in my country)', () => {
       cc: 'IN',
       active: true,
     });
+    const comingSoonUnpriced = await inCountry(ServiceStatus.COMING_SOON, null);
     const inactiveRate = await inCountry(ServiceStatus.ACTIVE, {
       cc: 'IN',
       active: false,
@@ -88,9 +89,25 @@ describe('GET /v1/services (available in my country)', () => {
     expect(keys).toContain(visible);
     expect(keys).toContain(visibleBeta);
     expect(keys).not.toContain(wrongCountry);
-    expect(keys).not.toContain(comingSoon);
     expect(keys).not.toContain(inactiveRate);
     expect(keys).not.toContain(unpriced);
+
+    // Coming-soon services are ROADMAP TEASERS: always listed (priced or not,
+    // any country), flagged by status, AFTER every available service.
+    expect(keys).toContain(comingSoon);
+    expect(keys).toContain(comingSoonUnpriced);
+    expect(list.find((s) => s.key === comingSoonUnpriced)!.status).toBe(
+      'coming_soon',
+    );
+    const lastAvailable = Math.max(
+      keys.indexOf(visible),
+      keys.indexOf(visibleBeta),
+    );
+    const firstTeaser = Math.min(
+      keys.indexOf(comingSoon),
+      keys.indexOf(comingSoonUnpriced),
+    );
+    expect(lastAvailable).toBeLessThan(firstTeaser);
 
     // Public shape: categories inlined, no admin-only fields.
     const svc = list.find((s) => s.key === visible)!;

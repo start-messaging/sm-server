@@ -34,6 +34,6 @@ export class ServicesPublicController {
         403,
       );
     }
-    return this.servicesPublic.listAvailableForCountry(user.countryCode);
+    return this.servicesPublic.listForCustomer(user.countryCode);
   }
 }

@@ -32,6 +32,8 @@ import { ServicesService } from './services.service';
     ServicesPublicController,
   ],
   providers: [ServicesService, ServicePricingService, ServicesPublicService],
-  exports: [ServicesService],
+  // ServicesPublicService: workspaces re-use the same availability rule the
+  // gallery shows (a workspace can only be created where the service sells).
+  exports: [ServicesService, ServicesPublicService],
 })
 export class ServicesModule {}

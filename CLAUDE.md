@@ -109,6 +109,49 @@ Before reporting any code change as done, run all three and make sure they pass:
 - There is exactly **one** jest config: `test/jest-e2e.json` (e2e specs in `test/` as `*.e2e-spec.ts`). There is no unit-test config — if one is ever added, it MUST also load `test/helpers/set-test-env.ts` via `setupFiles` so it can't touch the dev DB/Redis.
 - `nest-cli.json` sets `deleteOutDir: true`, so `nest build` wipes `dist/` on every build.
 
+## Authorization model — three layers; the SERVER is always the authority
+
+Read this before adding ANY customer-facing endpoint. The client's copy of
+`planFeatures`/`planLimits` (in the workspace payload) is **display data only**
+— a direct API call must hit the exact same wall the UI shows. Every customer
+request passes, in order:
+
+1. **AuthN — JWT** (`JwtAuthGuard`): who is calling. There is deliberately NO
+   workspace context in the JWT (no `active_workspace_id` claim to tamper with).
+2. **Membership + RBAC — `WorkspaceMemberGuard` + `@MinRole`**
+   (`src/workspaces/guards/`): resolves the `:slug` URL param per request, loads
+   the workspace **with its plan relation** onto `req.workspaceCtx`, verifies
+   ACTIVE member of ACTIVE workspace (non-members get the same 404
+   `WORKSPACE_NOT_FOUND` as a missing slug — never leak existence), then
+   rank-compares the role via `ROLE_RANK`.
+3. **Entitlements — the plan row in Postgres**, never anything client-sent:
+   - **Limits (countable quotas)**: enforced in the SERVICE layer at the point
+     of resource creation, INSIDE the mutating transaction, under a
+     `pg_advisory_xact_lock` so concurrent requests can't race past the cap.
+     `src/workspaces/plan-limit.service.ts` is the template for every future
+     quota. Over the cap → 403 `PLAN_LIMIT_REACHED` + `details:{limit, max}`.
+   - **Features (boolean gates)**: enforced by a `@RequiresFeature('key')`
+     controller guard placed AFTER `WorkspaceMemberGuard` (the plan is already
+     on `req.workspaceCtx` — no extra query). **NOT BUILT YET — intentionally**:
+     no feature-gated endpoint exists today. Build the guard together with the
+     FIRST such endpoint (e.g. campaigns); never ship a feature-bearing endpoint
+     without it.
+
+### Checklist — making an entitlement key actionable (in this order)
+
+1. Register the key in `src/plans/plan-keys.ts` (limits). The server enforces
+   ONLY registered keys; unregistered keys are display data that flow to the
+   client untouched.
+2. Add the server check: a `PlanLimitService.assertCan…` (count + advisory
+   lock, inside the transaction) for limits, or `@RequiresFeature` for features.
+3. e2e-test the DIRECT API call: over-limit / feature-off via raw request →
+   403, plus a concurrency test (`Promise.all`) whenever the check counts rows.
+4. Only THEN gate the client UX via `sm-client/src/lib/plan.ts`.
+
+Rule of thumb: if a key only changes what's **visible**, client-only gating is
+fine; if it changes what's **possible**, the server check comes first. Fixed
+semantics everywhere: absent feature = OFF, absent/null limit = UNLIMITED.
+
 ## Code style — best practices and scalable structure
 
 Always write code that scales. Do not pile unrelated concerns into one file.

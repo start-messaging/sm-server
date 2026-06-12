@@ -12,11 +12,14 @@ import { CountriesModule } from './countries/countries.module';
 import { CurrenciesModule } from './currencies/currencies.module';
 import { DatabaseModule } from './database/database.module';
 import { MailerModule } from './mailer/mailer.module';
+import { PlansModule } from './plans/plans.module';
 import { RedisModule } from './redis/redis.module';
 import { ReferralModule } from './referral/referral.module';
 import { SecurityModule } from './security/security.module';
 import { ServicesModule } from './services/services.module';
 import { UsersModule } from './users/users.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { WorkspacesModule } from './workspaces/workspaces.module';
 
 @Module({
   imports: [
@@ -39,6 +42,9 @@ import { UsersModule } from './users/users.module';
     CurrenciesModule,
     CountriesModule,
     ServicesModule,
+    PlansModule,
+    WorkspacesModule,
+    WhatsappModule,
   ],
   controllers: [AppController],
   providers: [AppService],

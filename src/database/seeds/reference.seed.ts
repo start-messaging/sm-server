@@ -1,6 +1,7 @@
 import dataSource from '../data-source';
 import { Country } from '../../countries/entities/country.entity';
 import { Currency } from '../../currencies/entities/currency.entity';
+import { Plan, PlanStatus } from '../../plans/entities/plan.entity';
 import { ServiceCategory } from '../../services/entities/service-category.entity';
 import { ServiceCountryRate } from '../../services/entities/service-country-rate.entity';
 import { Service, ServiceStatus } from '../../services/entities/service.entity';
@@ -146,6 +147,37 @@ const RATES: Array<Partial<ServiceCountryRate>> = [
   { serviceKey: 'sms', countryCode: 'US', categoryKey: 'promotional', currency: 'USD', providerCostMicros: 7000, sellMicros: 12000 }, // prettier-ignore
 ];
 
+// The permanent FREE plan (docs part-5 §21) — NOT a trial: trial_days 0, no
+// expiry. Paid tiers (STARTER/GROWTH/BUSINESS) arrive with the billing slice.
+// serviceKey null = the global fallback; service-specific FREE rows (e.g. an
+// SMS FREE with sender-id keys) are added as DATA when a service needs one.
+// features/limits are OPEN key-value sets: add keys freely — the server only
+// enforces the keys in src/plans/plan-keys.ts, the client gates UI off the rest.
+const PLANS: Array<Partial<Plan>> = [
+  {
+    code: 'FREE',
+    serviceKey: null,
+    name: 'Free',
+    tier: 0,
+    trialDays: 0,
+    status: PlanStatus.ACTIVE,
+    features: {
+      wa_campaigns: true,
+      campaign_analytics: false,
+      agent_inbox: true,
+      api_access: false,
+      support_level: 'email_bh',
+    },
+    limits: {
+      max_workspaces_per_service: 1,
+      max_agents: 1,
+      max_members: 5,
+      history_retention_days: 30,
+      max_contacts: 1000,
+    },
+  },
+];
+
 /** Idempotently insert base currencies, then countries (FK order). */
 export async function seedReferenceData(): Promise<void> {
   await dataSource
@@ -192,4 +224,13 @@ export async function seedReferenceData(): Promise<void> {
     .orIgnore()
     .execute();
   console.log(`[seed] service country rates ensured (${RATES.length})`);
+
+  await dataSource
+    .getRepository(Plan)
+    .createQueryBuilder()
+    .insert()
+    .values(PLANS)
+    .orIgnore()
+    .execute();
+  console.log(`[seed] plans ensured (${PLANS.length})`);
 }

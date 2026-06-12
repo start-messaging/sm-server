@@ -170,7 +170,8 @@ export class ServicesService {
     return service;
   }
 
-  private async assertServiceExists(key: string): Promise<void> {
+  /** 404 unless the service exists — also used by plans to validate scope. */
+  async assertServiceExists(key: string): Promise<void> {
     const exists = await this.services.exists({ where: { key } });
     if (!exists) {
       throw new AppException(

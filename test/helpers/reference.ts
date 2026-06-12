@@ -9,6 +9,8 @@ import {
   Service,
   ServiceStatus,
 } from '../../src/services/entities/service.entity';
+import { WorkspaceService } from '../../src/workspaces/entities/workspace-service.entity';
+import { Workspace } from '../../src/workspaces/entities/workspace.entity';
 
 /** Map any integer to an uppercase letter A–Z (wraps). */
 const L = (n: number): string =>
@@ -87,6 +89,8 @@ export async function seedCountry(
  * Seed a service directly via the repo and return its key. Idempotent: the row
  * (and its cascade children — categories, rates) is deleted first, so a key
  * reused across same-worker files (the per-file counter resets) starts clean.
+ * Workspaces created under the key (RESTRICT via workspace_services) are
+ * deleted first too — they belong to a sibling file's finished tests.
  */
 export async function seedService(
   app: INestApplication,
@@ -94,6 +98,16 @@ export async function seedService(
 ): Promise<string> {
   const repo = app.get<Repository<Service>>(getRepositoryToken(Service));
   const key = overrides.key ?? uniqueServiceKey();
+  const wsServices = app.get<Repository<WorkspaceService>>(
+    getRepositoryToken(WorkspaceService),
+  );
+  const dependents = await wsServices.find({ where: { serviceKey: key } });
+  if (dependents.length > 0) {
+    // Hard-delete the workspaces — CASCADE clears members + workspace_services.
+    await app
+      .get<Repository<Workspace>>(getRepositoryToken(Workspace))
+      .delete({ id: In(dependents.map((d) => d.workspaceId)) });
+  }
   await repo.delete({ key });
   await repo.save(
     repo.create({
