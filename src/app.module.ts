@@ -10,6 +10,7 @@ import { envValidationSchema } from './config/env.validation';
 import { HttpModule } from './config/http.config';
 import { CountriesModule } from './countries/countries.module';
 import { CurrenciesModule } from './currencies/currencies.module';
+import { CustomersAdminModule } from './customers-admin/customers-admin.module';
 import { DatabaseModule } from './database/database.module';
 import { MailerModule } from './mailer/mailer.module';
 import { PlansModule } from './plans/plans.module';
@@ -44,6 +45,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     ServicesModule,
     PlansModule,
     WorkspacesModule,
+    CustomersAdminModule,
     WhatsappModule,
   ],
   controllers: [AppController],

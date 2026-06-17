@@ -223,9 +223,15 @@ export async function freshCountryCode(app: INestApplication): Promise<string> {
 }
 
 export async function freshServiceKey(app: INestApplication): Promise<string> {
-  const key = uniqueServiceKey();
-  await app
-    .get<Repository<Service>>(getRepositoryToken(Service))
-    .delete({ key });
+  // `serviceSeq` resets per spec file (each Jest file gets its own module
+  // registry), so a naive key can collide with a sibling file's IN-USE service.
+  // Find a genuinely-absent key rather than deleting the colliding row — that
+  // delete would trip the RESTRICT FKs from workspace_services /
+  // workspace_service_rates and flake intermittently.
+  const repo = app.get<Repository<Service>>(getRepositoryToken(Service));
+  let key = uniqueServiceKey();
+  for (let i = 0; i < 1000 && (await repo.exists({ where: { key } })); i++) {
+    key = uniqueServiceKey();
+  }
   return key;
 }

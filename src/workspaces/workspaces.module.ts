@@ -7,6 +7,7 @@ import { ServicesModule } from '../services/services.module';
 import { UsersModule } from '../users/users.module';
 import { CreateWorkspaceController } from './create-workspace.controller';
 import { WorkspaceMember } from './entities/workspace-member.entity';
+import { WorkspaceServiceRate } from './entities/workspace-service-rate.entity';
 import { WorkspaceService } from './entities/workspace-service.entity';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspaceMemberGuard } from './guards/workspace-member.guard';
@@ -16,7 +17,12 @@ import { WorkspacesService } from './workspaces.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Workspace, WorkspaceMember, WorkspaceService]),
+    TypeOrmModule.forFeature([
+      Workspace,
+      WorkspaceMember,
+      WorkspaceService,
+      WorkspaceServiceRate,
+    ]),
     UsersModule,
     CountriesModule,
     // ServicesModule: availability check; PlansModule: the FREE plan;

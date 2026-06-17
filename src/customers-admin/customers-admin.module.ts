@@ -1,0 +1,48 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminModule } from '../admin/admin.module';
+import { CountriesModule } from '../countries/countries.module';
+import { ServiceCountryRate } from '../services/entities/service-country-rate.entity';
+import { Service } from '../services/entities/service.entity';
+import { User } from '../users/entities/user.entity';
+import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity';
+import { WorkspaceServiceRate } from '../workspaces/entities/workspace-service-rate.entity';
+import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
+import { Workspace } from '../workspaces/entities/workspace.entity';
+import { AdminUsersController } from './admin-users.controller';
+import { AdminUsersService } from './admin-users.service';
+import { AdminWorkspacesController } from './admin-workspaces.controller';
+import { AdminWorkspacesService } from './admin-workspaces.service';
+import { WorkspaceRatesController } from './workspace-rates.controller';
+import { WorkspaceRatesService } from './workspace-rates.service';
+
+/**
+ * Staff-facing surface over CUSTOMERS: read users + their workspaces, and
+ * manage workspace-tier pricing (the unified ladder). Reads = any staff;
+ * writes = SUPER_ADMIN + ADMIN. Read-only over identity — signup remains the
+ * only door for creating users/workspaces.
+ */
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([
+      User,
+      Workspace,
+      WorkspaceMember,
+      WorkspaceService,
+      WorkspaceServiceRate,
+      Service,
+      ServiceCountryRate,
+    ]),
+    // AdminModule: staff JWT strategy + guards for `@StaffAuth`.
+    // CountriesModule: currency cross-check when writing a ladder.
+    AdminModule,
+    CountriesModule,
+  ],
+  controllers: [
+    AdminUsersController,
+    AdminWorkspacesController,
+    WorkspaceRatesController,
+  ],
+  providers: [AdminUsersService, AdminWorkspacesService, WorkspaceRatesService],
+})
+export class CustomersAdminModule {}

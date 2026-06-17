@@ -4,6 +4,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { IsNull, Repository } from 'typeorm';
 import { Plan, PlanStatus } from '../../src/plans/entities/plan.entity';
+import { WorkspaceServiceRate } from '../../src/workspaces/entities/workspace-service-rate.entity';
 import { ensureCountryIN } from './auth';
 import { asSuccess } from './envelope';
 import { seedRate, seedService } from './reference';
@@ -102,6 +103,47 @@ export interface CreatedWorkspace {
   planCode: string;
   role: string;
   status: string;
+}
+
+/**
+ * Seed one (workspace, service, country, category) cell's LADDER directly via
+ * the repo — delete-cell-then-insert, idempotent like `seedRate`. Bypasses the
+ * API's category/currency checks deliberately (it's a fixture, not a test).
+ */
+export async function seedLadder(
+  app: INestApplication,
+  cell: {
+    workspaceId: string;
+    serviceKey: string;
+    countryCode: string;
+    categoryKey: string;
+    currency: string;
+    rungs: { minQty: number; sellMicros: number }[];
+  },
+): Promise<void> {
+  const repo = app.get<Repository<WorkspaceServiceRate>>(
+    getRepositoryToken(WorkspaceServiceRate),
+  );
+  await repo.delete({
+    workspaceId: cell.workspaceId,
+    serviceKey: cell.serviceKey,
+    countryCode: cell.countryCode,
+    categoryKey: cell.categoryKey,
+  });
+  await repo.save(
+    cell.rungs.map((r) =>
+      repo.create({
+        workspaceId: cell.workspaceId,
+        serviceKey: cell.serviceKey,
+        countryCode: cell.countryCode,
+        categoryKey: cell.categoryKey,
+        minQty: r.minQty,
+        sellMicros: r.sellMicros,
+        currency: cell.currency,
+        isActive: true,
+      }),
+    ),
+  );
 }
 
 /** POST a workspace for an onboarded user's token and unwrap the summary. */
