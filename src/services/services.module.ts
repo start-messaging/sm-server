@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from '../admin/admin.module';
 import { AuthModule } from '../auth/auth.module';
 import { CountriesModule } from '../countries/countries.module';
+import { PricingModule } from '../pricing/pricing.module';
 import { UsersModule } from '../users/users.module';
 import { ServiceCategory } from './entities/service-category.entity';
 import { ServiceCountryRate } from './entities/service-country-rate.entity';
@@ -25,6 +26,8 @@ import { ServicesService } from './services.service';
     CountriesModule,
     AuthModule,
     UsersModule,
+    // PricingModule: bump the resolver's cache version on any rate write.
+    PricingModule,
   ],
   controllers: [
     ServicesController,

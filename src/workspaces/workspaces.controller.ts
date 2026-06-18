@@ -31,4 +31,13 @@ export class WorkspacesController {
   getBySlug(@CurrentWorkspace() ctx: WorkspaceContext) {
     return this.workspaces.presentContext(ctx);
   }
+
+  /** Read-only wallet balance for the workspace dashboard (any active member). */
+  @Get(':slug/wallet')
+  @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
+  @ApiBearerAuth()
+  @ApiErrorResponse({ status: 404, code: 'WORKSPACE_NOT_FOUND' })
+  getWallet(@CurrentWorkspace() ctx: WorkspaceContext) {
+    return this.workspaces.getWalletForContext(ctx);
+  }
 }

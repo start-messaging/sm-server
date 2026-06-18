@@ -4,6 +4,8 @@ import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { AppException } from '../common/exceptions/app.exception';
 import { AppLogger } from '../common/logger/app-logger.service';
 import { CountriesService } from '../countries/countries.service';
+import { RateResolverService } from '../pricing/rate-resolver.service';
+import type { ResolvedRate } from '../pricing/resolved-rate';
 import { ServiceCountryRate } from '../services/entities/service-country-rate.entity';
 import { ServiceCategory } from '../services/entities/service-category.entity';
 import { Service } from '../services/entities/service.entity';
@@ -45,6 +47,7 @@ export class WorkspaceRatesService {
     @InjectRepository(Service)
     private readonly services: Repository<Service>,
     private readonly countries: CountriesService,
+    private readonly rateResolver: RateResolverService,
     private readonly dataSource: DataSource,
     private readonly logger: AppLogger,
   ) {}
@@ -141,6 +144,7 @@ export class WorkspaceRatesService {
       throw err;
     }
 
+    await this.rateResolver.invalidate(serviceKey, cc);
     this.logger.log(
       {
         event: 'workspace.ladder.replaced',
@@ -181,6 +185,7 @@ export class WorkspaceRatesService {
         404,
       );
     }
+    await this.rateResolver.invalidate(serviceKey, cc);
     this.logger.log(
       {
         event: 'workspace.ladder.cleared',
@@ -191,6 +196,29 @@ export class WorkspaceRatesService {
       },
       'CustomersAdmin',
     );
+  }
+
+  /**
+   * Preview what this workspace would pay for a (country, category) send at a
+   * given monthly volume — answers "what's the effective per-message price?"
+   * straight from the two-tier resolver (cold, so it reflects current config).
+   */
+  async resolvePreview(
+    workspaceId: string,
+    serviceKey: string,
+    countryCode: string,
+    categoryKey: string,
+    qty: number,
+  ): Promise<ResolvedRate> {
+    const { service } = await this.getCellContext(workspaceId, serviceKey);
+    this.assertCategory(service, categoryKey);
+    return this.rateResolver.resolveCold({
+      workspaceId,
+      serviceKey,
+      countryCode,
+      categoryKey,
+      qty,
+    });
   }
 
   /* ------------------------------ helpers ------------------------------- */

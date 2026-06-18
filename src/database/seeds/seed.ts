@@ -4,6 +4,8 @@ import * as argon2 from 'argon2';
 import dataSource from '../data-source';
 import { PlatformStaff } from '../../admin/entities/platform-staff.entity';
 import { PlatformRole } from '../../admin/enums/platform-role.enum';
+import { Wallet } from '../../wallets/entities/wallet.entity';
+import { Workspace } from '../../workspaces/entities/workspace.entity';
 import { seedReferenceData } from './reference.seed';
 
 loadEnv();
@@ -35,11 +37,46 @@ async function seedBootstrapStaff(): Promise<void> {
   console.log(`[seed] created bootstrap SUPER_ADMIN: ${email}`);
 }
 
+/**
+ * Billing Core arrived after some workspaces already existed (the pre-reset
+ * data). Every workspace must have exactly one wallet, currency-locked to it.
+ * New workspaces get theirs inside the create transaction; this backfills the
+ * stragglers. Idempotent: only creates wallets for workspaces missing one.
+ */
+async function backfillWallets(): Promise<void> {
+  const workspaces = dataSource.getRepository(Workspace);
+  const wallets = dataSource.getRepository(Wallet);
+
+  const orphaned: { id: string; default_currency: string }[] = await workspaces
+    .createQueryBuilder('w')
+    .select(['w.id AS id', 'w.default_currency AS default_currency'])
+    .leftJoin(Wallet, 'wal', 'wal.workspace_id = w.id')
+    .where('wal.id IS NULL')
+    .getRawMany();
+
+  if (orphaned.length === 0) {
+    console.log('[seed] all workspaces already have a wallet');
+    return;
+  }
+  await wallets.save(
+    orphaned.map((w) =>
+      wallets.create({
+        workspaceId: w.id,
+        currency: w.default_currency,
+        balanceMicros: '0',
+        heldMicros: '0',
+      }),
+    ),
+  );
+  console.log(`[seed] backfilled ${orphaned.length} wallet(s)`);
+}
+
 async function run(): Promise<void> {
   await dataSource.initialize();
   try {
     await seedReferenceData();
     await seedBootstrapStaff();
+    await backfillWallets();
   } finally {
     await dataSource.destroy();
   }

@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { AppException } from '../common/exceptions/app.exception';
 import { AppLogger } from '../common/logger/app-logger.service';
 import { CountriesService } from '../countries/countries.service';
+import { RateResolverService } from '../pricing/rate-resolver.service';
 import { AddCountryDto } from './dto/add-country.dto';
 import { UpsertRateDto } from './dto/upsert-rate.dto';
 import { ServiceCountryRate } from './entities/service-country-rate.entity';
@@ -29,6 +30,7 @@ export class ServicePricingService {
     @InjectRepository(Service)
     private readonly services: Repository<Service>,
     private readonly countries: CountriesService,
+    private readonly rateResolver: RateResolverService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -84,6 +86,7 @@ export class ServicePricingService {
     if (dto.isActive !== undefined) rate.isActive = dto.isActive;
 
     const saved = await this.rates.save(rate);
+    await this.rateResolver.invalidate(key, cc);
     this.logger.log(
       {
         event: 'service.rate.upserted',
@@ -134,6 +137,7 @@ export class ServicePricingService {
         }),
       ),
     );
+    await this.rateResolver.invalidate(key, cc);
     this.logger.log(
       { event: 'service.rate.country.added', service: key, country: cc },
       'Services',
@@ -158,6 +162,7 @@ export class ServicePricingService {
       );
     }
     await this.rates.remove(rate);
+    await this.rateResolver.invalidate(key, cc);
     this.logger.log(
       {
         event: 'service.rate.removed',
@@ -182,6 +187,7 @@ export class ServicePricingService {
       );
     }
     await this.rates.delete({ serviceKey: key, countryCode: cc });
+    await this.rateResolver.invalidate(key, cc);
     this.logger.log(
       { event: 'service.rate.country.removed', service: key, country: cc },
       'Services',

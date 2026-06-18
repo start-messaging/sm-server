@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, QueryFailedError, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  In,
+  QueryFailedError,
+  Repository,
+} from 'typeorm';
 import { AppException } from '../common/exceptions/app.exception';
 import { AppLogger } from '../common/logger/app-logger.service';
 import { slugify, slugSuffix } from '../common/slug/slugify';
@@ -9,6 +15,12 @@ import { PlansService } from '../plans/plans.service';
 import { ServicesPublicService } from '../services/services-public.service';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
+import { WalletTxSubType } from '../wallets/entities/wallet-transaction.entity';
+import { WalletService } from '../wallets/wallet.service';
+import {
+  presentWalletBalance,
+  type WalletBalanceView,
+} from '../wallets/wallet-view';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import {
   MemberStatus,
@@ -46,6 +58,7 @@ export class WorkspacesService {
     private readonly servicesPublic: ServicesPublicService,
     private readonly plans: PlansService,
     private readonly planLimits: PlanLimitService,
+    private readonly wallets: WalletService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -136,6 +149,13 @@ export class WorkspacesService {
               status: WorkspaceServiceStatus.PENDING_SETUP,
             }),
           );
+          // The wallet is part of the same atomic unit (docs T2): a workspace
+          // never exists without one. Currency is locked to the workspace.
+          await this.wallets.createWallet(em, {
+            workspaceId: ws.id,
+            currency: country.currencyCode,
+          });
+          await this.creditSignupBonus(em, ws, country.currencyCode);
           return ws;
         });
         workspace.plan = plan;
@@ -160,6 +180,35 @@ export class WorkspacesService {
     }
     // Unreachable: the loop either returns or throws.
     throw new Error('workspace slug retries exhausted');
+  }
+
+  /**
+   * Promotional credit at signup. The per-country amount belongs in
+   * `plan_pricing.signup_bonus_micros` (Phase 7) — that table isn't built yet,
+   * and a single cross-currency micros constant would be wrong, so the amount
+   * resolves to 0 today and no ledger row is written. The credit MECHANISM
+   * (idempotent, ledger-backed) is wired here so it lights up the moment
+   * plan_pricing supplies a real per-country figure.
+   */
+  private async creditSignupBonus(
+    em: EntityManager,
+    workspace: Workspace,
+    currency: string,
+  ): Promise<void> {
+    const bonusMicros = 0; // TODO(Phase 7): plan_pricing.signup_bonus_micros
+    if (bonusMicros <= 0) return;
+    await this.wallets.credit(
+      {
+        workspaceId: workspace.id,
+        amountMicros: bonusMicros,
+        currency,
+        subType: WalletTxSubType.SIGNUP_BONUS,
+        referenceType: 'promotion',
+        referenceId: workspace.id,
+        idempotencyKey: `signup_bonus:${workspace.id}`,
+      },
+      em,
+    );
   }
 
   /** Every workspace the user is an active member of, with its service + role. */
@@ -206,6 +255,17 @@ export class WorkspacesService {
       serviceRow?.serviceKey ?? '',
       ctx.membership,
     );
+  }
+
+  /** Read-only wallet balance for a workspace member (guard already authed). */
+  async getWalletForContext(ctx: {
+    workspace: Workspace;
+  }): Promise<WalletBalanceView> {
+    const wallet = await this.wallets.ensureWallet(
+      ctx.workspace.id,
+      ctx.workspace.defaultCurrency,
+    );
+    return presentWalletBalance(wallet);
   }
 
   private assertOnboarded(user: User): string {

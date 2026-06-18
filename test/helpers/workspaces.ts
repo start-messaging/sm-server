@@ -5,7 +5,7 @@ import type { App } from 'supertest/types';
 import { IsNull, Repository } from 'typeorm';
 import { Plan, PlanStatus } from '../../src/plans/entities/plan.entity';
 import { WorkspaceServiceRate } from '../../src/workspaces/entities/workspace-service-rate.entity';
-import { ensureCountryIN } from './auth';
+import { ensureCountryIN, registerOnboardedUser } from './auth';
 import { asSuccess } from './envelope';
 import { seedRate, seedService } from './reference';
 
@@ -159,4 +159,19 @@ export async function createWorkspace(
     .send({ name })
     .expect(201);
   return asSuccess<CreatedWorkspace>(res.body).data;
+}
+
+/**
+ * A brand-new onboarded user + their workspace (with a freshly-funded-zero
+ * wallet) under `serviceKey`. Use in `beforeEach` for wallet/billing specs that
+ * need a clean, isolated balance per test.
+ */
+export async function seedOnboardedWorkspace(
+  app: INestApplication,
+  server: App,
+  serviceKey: string,
+): Promise<{ workspace: CreatedWorkspace; accessToken: string }> {
+  const user = await registerOnboardedUser(app, server);
+  const workspace = await createWorkspace(server, user.accessToken, serviceKey);
+  return { workspace, accessToken: user.accessToken };
 }

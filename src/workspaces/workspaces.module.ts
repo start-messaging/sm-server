@@ -5,6 +5,7 @@ import { CountriesModule } from '../countries/countries.module';
 import { PlansModule } from '../plans/plans.module';
 import { ServicesModule } from '../services/services.module';
 import { UsersModule } from '../users/users.module';
+import { WalletModule } from '../wallets/wallet.module';
 import { CreateWorkspaceController } from './create-workspace.controller';
 import { WorkspaceMember } from './entities/workspace-member.entity';
 import { WorkspaceServiceRate } from './entities/workspace-service-rate.entity';
@@ -26,10 +27,12 @@ import { WorkspacesService } from './workspaces.service';
     UsersModule,
     CountriesModule,
     // ServicesModule: availability check; PlansModule: the FREE plan;
-    // AuthModule: registers the user-jwt strategy the guards rely on.
+    // AuthModule: registers the user-jwt strategy the guards rely on;
+    // WalletModule: funds a wallet in the same workspace-create transaction.
     ServicesModule,
     PlansModule,
     AuthModule,
+    WalletModule,
   ],
   controllers: [WorkspacesController, CreateWorkspaceController],
   providers: [WorkspacesService, PlanLimitService, WorkspaceMemberGuard],

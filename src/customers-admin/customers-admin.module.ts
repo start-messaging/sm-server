@@ -2,15 +2,19 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from '../admin/admin.module';
 import { CountriesModule } from '../countries/countries.module';
+import { PricingModule } from '../pricing/pricing.module';
 import { ServiceCountryRate } from '../services/entities/service-country-rate.entity';
 import { Service } from '../services/entities/service.entity';
 import { User } from '../users/entities/user.entity';
+import { WalletModule } from '../wallets/wallet.module';
 import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity';
 import { WorkspaceServiceRate } from '../workspaces/entities/workspace-service-rate.entity';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
+import { AdminWalletsController } from './admin-wallets.controller';
+import { AdminWalletsService } from './admin-wallets.service';
 import { AdminWorkspacesController } from './admin-workspaces.controller';
 import { AdminWorkspacesService } from './admin-workspaces.service';
 import { WorkspaceRatesController } from './workspace-rates.controller';
@@ -35,14 +39,24 @@ import { WorkspaceRatesService } from './workspace-rates.service';
     ]),
     // AdminModule: staff JWT strategy + guards for `@StaffAuth`.
     // CountriesModule: currency cross-check when writing a ladder.
+    // PricingModule: resolve-preview + cache invalidation on ladder writes.
+    // WalletModule: the money primitives behind the admin Wallet tab.
     AdminModule,
     CountriesModule,
+    PricingModule,
+    WalletModule,
   ],
   controllers: [
     AdminUsersController,
     AdminWorkspacesController,
     WorkspaceRatesController,
+    AdminWalletsController,
   ],
-  providers: [AdminUsersService, AdminWorkspacesService, WorkspaceRatesService],
+  providers: [
+    AdminUsersService,
+    AdminWorkspacesService,
+    WorkspaceRatesService,
+    AdminWalletsService,
+  ],
 })
 export class CustomersAdminModule {}
