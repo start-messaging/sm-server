@@ -3,6 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppException } from '../common/exceptions/app.exception';
 import {
+  InvitationStatus,
+  WorkspaceInvitation,
+} from '../members/entities/workspace-invitation.entity';
+import {
   MemberStatus,
   ROLE_RANK,
   WorkspaceMember,
@@ -25,6 +29,8 @@ export class AdminWorkspacesService {
     private readonly wsServices: Repository<WorkspaceService>,
     @InjectRepository(WorkspaceServiceRate)
     private readonly ladders: Repository<WorkspaceServiceRate>,
+    @InjectRepository(WorkspaceInvitation)
+    private readonly invitations: Repository<WorkspaceInvitation>,
   ) {}
 
   async getDetail(id: string): Promise<AdminWorkspaceDetail> {
@@ -39,17 +45,22 @@ export class AdminWorkspacesService {
       );
     }
 
-    const [memberRows, serviceRows, overrideCount] = await Promise.all([
-      this.members.find({
-        where: { workspaceId: id },
-        relations: { user: true },
-      }),
-      this.wsServices.find({
-        where: { workspaceId: id },
-        relations: { service: true },
-      }),
-      this.countOverrides(id),
-    ]);
+    const [memberRows, serviceRows, invitationRows, overrideCount] =
+      await Promise.all([
+        this.members.find({
+          where: { workspaceId: id },
+          relations: { user: true },
+        }),
+        this.wsServices.find({
+          where: { workspaceId: id },
+          relations: { service: true },
+        }),
+        this.invitations.find({
+          where: { workspaceId: id, status: InvitationStatus.PENDING },
+          order: { createdAt: 'DESC' },
+        }),
+        this.countOverrides(id),
+      ]);
 
     // Owner-first, then alphabetical — one row (the owner) until invites ship.
     const members = memberRows
@@ -97,6 +108,12 @@ export class AdminWorkspacesService {
         : null,
       membersCount,
       members,
+      invitations: invitationRows.map((inv) => ({
+        email: inv.email,
+        role: inv.role,
+        invitedAt: inv.createdAt,
+        expiresAt: inv.expiresAt,
+      })),
       services: serviceRows.map((r) => ({
         serviceKey: r.serviceKey,
         serviceName: r.service?.name ?? r.serviceKey,

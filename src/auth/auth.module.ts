@@ -44,6 +44,8 @@ import { OtpResendService } from './otp-resend.service';
     JwtStrategy,
   ],
   // PassportModule registers the `user-jwt` strategy other modules' guards use.
-  exports: [PassportModule],
+  // AuthService is exported so the members slice can issue a customer session
+  // when a brand-new user claims a workspace invite.
+  exports: [PassportModule, AuthService],
 })
 export class AuthModule {}

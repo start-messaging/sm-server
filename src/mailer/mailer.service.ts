@@ -57,4 +57,31 @@ export class MailerService {
       'Mailer',
     );
   }
+
+  /** Invite an email to join a workspace. Points at the customer SPA. */
+  async sendWorkspaceInvite(
+    email: string,
+    token: string,
+    workspaceName: string,
+    inviterName: string,
+  ): Promise<void> {
+    const baseUrl = this.config
+      .get('CLIENT_APP_URL', { infer: true })
+      .replace(/\/+$/, '');
+    const link = `${baseUrl}/invite/accept?token=${token}`;
+    await this.provider.send({
+      to: email,
+      subject: `${inviterName} invited you to ${workspaceName}`,
+      text: `${inviterName} has invited you to join "${workspaceName}". Accept your invitation here: ${link}`,
+    });
+    // The link carries the one-time token; never logged outside the dev console.
+    this.logger.log(
+      {
+        event: 'mail.workspace_invite.sent',
+        to: email,
+        provider: this.provider.key,
+      },
+      'Mailer',
+    );
+  }
 }

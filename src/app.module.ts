@@ -13,6 +13,7 @@ import { CurrenciesModule } from './currencies/currencies.module';
 import { CustomersAdminModule } from './customers-admin/customers-admin.module';
 import { DatabaseModule } from './database/database.module';
 import { MailerModule } from './mailer/mailer.module';
+import { MembersModule } from './members/members.module';
 import { PlansModule } from './plans/plans.module';
 import { RedisModule } from './redis/redis.module';
 import { ReferralModule } from './referral/referral.module';
@@ -45,6 +46,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     ServicesModule,
     PlansModule,
     WorkspacesModule,
+    MembersModule,
     CustomersAdminModule,
     WhatsappModule,
   ],

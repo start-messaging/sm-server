@@ -114,6 +114,20 @@ export class AuthService extends EmailAuthService<User, UserProfile> {
     return { ...tokens, user: presentUser(user) };
   }
 
+  /**
+   * Issue a customer session for an already-resolved, active user — used when
+   * identity is established outside the password/OTP path (e.g. claiming a
+   * workspace invite creates the account, then logs them straight in).
+   */
+  async issueSessionFor(
+    user: User,
+    ctx: AuthContext,
+  ): Promise<AuthTokensWithUser> {
+    const tokens = await this.issueTokens(user, ctx);
+    await this.onLogin(user);
+    return { ...tokens, user: presentUser(user) };
+  }
+
   async login(dto: LoginDto, ctx: AuthContext): Promise<AuthTokensWithUser> {
     try {
       const { tokens, principal } = await this.authenticate(

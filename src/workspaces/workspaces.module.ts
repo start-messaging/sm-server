@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { CountriesModule } from '../countries/countries.module';
 import { PlansModule } from '../plans/plans.module';
+import { WorkspaceInvitation } from '../members/entities/workspace-invitation.entity';
 import { ServicesModule } from '../services/services.module';
 import { UsersModule } from '../users/users.module';
 import { WalletModule } from '../wallets/wallet.module';
@@ -23,6 +24,9 @@ import { WorkspacesService } from './workspaces.service';
       WorkspaceMember,
       WorkspaceService,
       WorkspaceServiceRate,
+      // Registered so PlanLimitService can count PENDING invitations (reserved
+      // seats) toward max_members / max_agents.
+      WorkspaceInvitation,
     ]),
     UsersModule,
     CountriesModule,
@@ -36,8 +40,13 @@ import { WorkspacesService } from './workspaces.service';
   ],
   controllers: [WorkspacesController, CreateWorkspaceController],
   providers: [WorkspacesService, PlanLimitService, WorkspaceMemberGuard],
-  // Guard + entities exported for future workspace-scoped modules (members,
-  // settings, billing) to reuse.
-  exports: [WorkspacesService, WorkspaceMemberGuard, TypeOrmModule],
+  // Guard + entities + plan-limit enforcement exported for workspace-scoped
+  // modules (members, settings, billing) to reuse.
+  exports: [
+    WorkspacesService,
+    WorkspaceMemberGuard,
+    PlanLimitService,
+    TypeOrmModule,
+  ],
 })
 export class WorkspacesModule {}

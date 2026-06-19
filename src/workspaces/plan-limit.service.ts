@@ -2,13 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { AppException } from '../common/exceptions/app.exception';
+import {
+  InvitationStatus,
+  WorkspaceInvitation,
+} from '../members/entities/workspace-invitation.entity';
 import { Plan } from '../plans/entities/plan.entity';
 import { PLAN_LIMIT_KEYS } from '../plans/plan-keys';
 import {
+  MemberStatus,
   WorkspaceMember,
   WorkspaceRole,
 } from './entities/workspace-member.entity';
 import { WorkspaceService } from './entities/workspace-service.entity';
+
+/** Numeric plan limit for a key; null/absent/non-number = unlimited. */
+function numLimit(plan: Plan, key: string): number | null {
+  const raw = plan.limits?.[key];
+  return typeof raw === 'number' ? raw : null;
+}
 
 /**
  * Cross-workspace plan rules (docs part-5 §21.4). Unlike per-workspace limits
@@ -21,6 +32,8 @@ export class PlanLimitService {
   constructor(
     @InjectRepository(WorkspaceMember)
     private readonly members: Repository<WorkspaceMember>,
+    @InjectRepository(WorkspaceInvitation)
+    private readonly invitations: Repository<WorkspaceInvitation>,
   ) {}
 
   /**
@@ -37,8 +50,7 @@ export class PlanLimitService {
     serviceKey: string,
     em?: EntityManager,
   ): Promise<void> {
-    const raw = plan.limits?.[PLAN_LIMIT_KEYS.maxWorkspacesPerService];
-    const max = typeof raw === 'number' ? raw : null;
+    const max = numLimit(plan, PLAN_LIMIT_KEYS.maxWorkspacesPerService);
     if (max === null) return; // unlimited
 
     const repo = em ? em.getRepository(WorkspaceMember) : this.members;
@@ -60,6 +72,99 @@ export class PlanLimitService {
           code: 'PLAN_LIMIT_REACHED',
           message: `The ${plan.code} plan allows ${max} workspace(s) per service`,
           details: { limit: PLAN_LIMIT_KEYS.maxWorkspacesPerService, max },
+        },
+        403,
+      );
+    }
+  }
+
+  /**
+   * `max_members` (and `max_agents` when inviting an AGENT) per workspace.
+   * **Reserved-seat** counting: a seat is held the moment an invite is sent, so
+   * the count is active members + PENDING invitations. Because accept is a 1:1
+   * pending→active conversion it consumes no new seat — the cap can't be
+   * overshot, so accept needs no re-check. Call inside the invite transaction,
+   * after the per-workspace advisory lock, so count+insert is race-proof.
+   */
+  async assertCanInviteMember(
+    plan: Plan,
+    workspaceId: string,
+    role: WorkspaceRole,
+    em?: EntityManager,
+  ): Promise<void> {
+    const memberRepo = em ? em.getRepository(WorkspaceMember) : this.members;
+    const inviteRepo = em
+      ? em.getRepository(WorkspaceInvitation)
+      : this.invitations;
+
+    const maxMembers = numLimit(plan, PLAN_LIMIT_KEYS.maxMembers);
+    if (maxMembers !== null) {
+      const [activeMembers, pendingInvites] = await Promise.all([
+        memberRepo.count({
+          where: { workspaceId, status: MemberStatus.ACTIVE },
+        }),
+        inviteRepo.count({
+          where: { workspaceId, status: InvitationStatus.PENDING },
+        }),
+      ]);
+      if (activeMembers + pendingInvites >= maxMembers) {
+        throw new AppException(
+          {
+            code: 'PLAN_LIMIT_REACHED',
+            message: `The ${plan.code} plan allows ${maxMembers} member(s) per workspace`,
+            details: { limit: PLAN_LIMIT_KEYS.maxMembers, max: maxMembers },
+          },
+          403,
+        );
+      }
+    }
+
+    if (role === WorkspaceRole.AGENT) {
+      await this.assertAgentSeat(plan, workspaceId, em);
+    }
+  }
+
+  /**
+   * The `max_agents` reserved-seat check on its own — for paths that turn a
+   * non-agent into an AGENT without adding a member (re-inviting a pending
+   * invite as AGENT, or promoting a member via change-role). Counts active
+   * AGENT members + pending AGENT invitations; the row being promoted is not
+   * yet an AGENT, so it isn't counted — the check verifies room for one more.
+   * Call under the per-workspace advisory lock for race-safety.
+   */
+  async assertAgentSeat(
+    plan: Plan,
+    workspaceId: string,
+    em?: EntityManager,
+  ): Promise<void> {
+    const maxAgents = numLimit(plan, PLAN_LIMIT_KEYS.maxAgents);
+    if (maxAgents === null) return;
+    const memberRepo = em ? em.getRepository(WorkspaceMember) : this.members;
+    const inviteRepo = em
+      ? em.getRepository(WorkspaceInvitation)
+      : this.invitations;
+    const [activeAgents, pendingAgentInvites] = await Promise.all([
+      memberRepo.count({
+        where: {
+          workspaceId,
+          status: MemberStatus.ACTIVE,
+          role: WorkspaceRole.AGENT,
+        },
+      }),
+      inviteRepo.count({
+        where: {
+          workspaceId,
+          status: InvitationStatus.PENDING,
+          role: WorkspaceRole.AGENT,
+        },
+      }),
+    ]);
+    if (activeAgents + pendingAgentInvites >= maxAgents) {
+      throw new AppException(
+        {
+          code: 'PLAN_LIMIT_REACHED',
+          message: `The ${plan.code} plan allows ${maxAgents} agent(s) per workspace`,
+          details: { limit: PLAN_LIMIT_KEYS.maxAgents, max: maxAgents },
         },
         403,
       );

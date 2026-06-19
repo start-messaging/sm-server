@@ -23,6 +23,7 @@ interface WorkspaceDetail {
   owner: { email: string } | null;
   membersCount: number;
   members: { userId: string; email: string; role: string; status: string }[];
+  invitations: { email: string; role: string }[];
   services: { serviceKey: string; status: string }[];
   overrideCount: number;
 }
@@ -78,6 +79,8 @@ describe('GET /v1/admin/workspaces/:id', () => {
       role: 'OWNER',
       status: 'active',
     });
+    // No invites sent yet → empty (the field is always present).
+    expect(detail.invitations).toEqual([]);
     expect(detail.services).toHaveLength(1);
     expect(detail.services[0]).toMatchObject({
       serviceKey,

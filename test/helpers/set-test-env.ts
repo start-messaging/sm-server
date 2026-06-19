@@ -25,3 +25,10 @@ process.env.REDIS_DB = '15';
 // the issue cooldown would 429 them. Disabled suite-wide — ONLY the dedicated
 // otp-cooldown spec overrides this (per-file, before createTestApp).
 process.env.OTP_RESEND_COOLDOWN_SEC = '0';
+
+// The suite runs dozens of real signup/login flows; full Argon2 cost would
+// dominate the runtime. Use the minimum cost in tests — `verify` reads params
+// from the hash, so correctness is unaffected (production keeps the strong
+// defaults). Not a security surface: the test DB is ephemeral.
+process.env.ARGON2_TIME_COST = '1';
+process.env.ARGON2_MEMORY_COST = '512';

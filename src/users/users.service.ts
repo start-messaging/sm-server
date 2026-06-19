@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { AppException } from '../common/exceptions/app.exception';
 import { User, UserStatus } from './entities/user.entity';
 
@@ -53,6 +53,40 @@ export class UsersService {
     } catch (err) {
       // Concurrent first signups race past the find-then-create check; the
       // unique email index settles it — the loser gets the normal 409.
+      if (
+        err instanceof QueryFailedError &&
+        (err.driverError as { code?: string }).code === '23505'
+      ) {
+        throw new AppException(
+          { code: 'EMAIL_TAKEN', message: 'Email already registered' },
+          409,
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Create a user from an accepted workspace invitation: the invite link proved
+   * the email is theirs, so the account is born ACTIVE + email-verified with no
+   * email-OTP step. Mobile stays unverified — that's only required to OWN a
+   * workspace, not to be a member. 23505 → EMAIL_TAKEN (email already exists).
+   */
+  async createInvited(
+    input: CreatePendingUserInput,
+    em?: EntityManager,
+  ): Promise<User> {
+    const repo = em ? em.getRepository(User) : this.users;
+    const user = repo.create({
+      email: input.email,
+      passwordHash: input.passwordHash,
+      fullName: input.fullName,
+      status: UserStatus.ACTIVE,
+      emailVerified: true,
+    });
+    try {
+      return await repo.save(user);
+    } catch (err) {
       if (
         err instanceof QueryFailedError &&
         (err.driverError as { code?: string }).code === '23505'

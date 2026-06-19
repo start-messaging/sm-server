@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from '../admin/admin.module';
 import { CountriesModule } from '../countries/countries.module';
+import { WorkspaceInvitation } from '../members/entities/workspace-invitation.entity';
 import { PricingModule } from '../pricing/pricing.module';
 import { ServiceCountryRate } from '../services/entities/service-country-rate.entity';
 import { Service } from '../services/entities/service.entity';
@@ -34,6 +35,7 @@ import { WorkspaceRatesService } from './workspace-rates.service';
       WorkspaceMember,
       WorkspaceService,
       WorkspaceServiceRate,
+      WorkspaceInvitation,
       Service,
       ServiceCountryRate,
     ]),

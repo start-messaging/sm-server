@@ -17,6 +17,9 @@ export const envValidationSchema = Joi.object({
   // Admin SPA base URL — used to build staff-invite links in emails.
   ADMIN_APP_URL: Joi.string().uri().default('http://localhost:5174'),
 
+  // Customer SPA base URL — used to build workspace member-invite links.
+  CLIENT_APP_URL: Joi.string().uri().default('http://localhost:5173'),
+
   DB_HOST: Joi.string().required(),
   DB_PORT: Joi.number().port().default(5432),
   DB_USERNAME: Joi.string().required(),
@@ -29,6 +32,13 @@ export const envValidationSchema = Joi.object({
   // Max Postgres connections per pool. Bounded small under the e2e suite so
   // many parallel jest workers (one app each) don't exhaust `max_connections`.
   DB_POOL_MAX: Joi.number().min(1).default(10),
+
+  // Argon2id cost factors for password/OTP hashing. Production defaults are
+  // strong; the e2e suite lowers them (set-test-env.ts) so its ~dozens of real
+  // signup flows don't spend seconds in the KDF. `verify` reads params from the
+  // stored hash, so lowering the cost never breaks verification.
+  ARGON2_TIME_COST: Joi.number().min(1).default(3),
+  ARGON2_MEMORY_COST: Joi.number().min(8).default(65536),
 
   // Redis — required; sessions live here (instant logout).
   REDIS_HOST: Joi.string().required(),
@@ -88,6 +98,7 @@ export interface EnvVars {
   PORT: number;
   CORS_ORIGINS: string;
   ADMIN_APP_URL: string;
+  CLIENT_APP_URL: string;
 
   DB_HOST: string;
   DB_PORT: number;
@@ -98,6 +109,8 @@ export interface EnvVars {
   DB_LOGGING: boolean;
   DB_SYNCHRONIZE: boolean;
   DB_POOL_MAX: number;
+  ARGON2_TIME_COST: number;
+  ARGON2_MEMORY_COST: number;
 
   REDIS_HOST: string;
   REDIS_PORT: number;
