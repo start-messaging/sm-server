@@ -32,3 +32,8 @@ process.env.OTP_RESEND_COOLDOWN_SEC = '0';
 // defaults). Not a security surface: the test DB is ephemeral.
 process.env.ARGON2_TIME_COST = '1';
 process.env.ARGON2_MEMORY_COST = '512';
+
+// ENCRYPTION_KEY is required by Joi. Use a deterministic test-only key (never
+// reuse this in production). 64 hex chars = 32 bytes for AES-256-GCM.
+process.env.ENCRYPTION_KEY =
+  '0000000000000000000000000000000000000000000000000000000000000000';

@@ -19,7 +19,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'user-jwt') {
     private readonly sessions: SessionStore,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // Bearer for normal API; query `access_token` for EventSource (SSE)
+      // which cannot set Authorization headers.
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        ExtractJwt.fromUrlQueryParameter('access_token'),
+      ]),
       ignoreExpiration: false,
       secretOrKey: config.get('JWT_ACCESS_SECRET', { infer: true }),
     });

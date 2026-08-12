@@ -16,4 +16,10 @@ export class AdminWorkspacesController {
   detail(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminWorkspaces.getDetail(id);
   }
+
+  @Get(':id/whatsapp-status')
+  @StaffAuth()
+  whatsappStatus(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminWorkspaces.getWhatsAppStatus(id);
+  }
 }

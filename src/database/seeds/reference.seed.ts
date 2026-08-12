@@ -56,13 +56,15 @@ const SERVICES: Array<Partial<Service>> = [
       'Template & session messaging via the WhatsApp Business Platform.',
     status: ServiceStatus.ACTIVE,
   },
+  // SMS is a separate product (legacy stack). Kept as coming_soon so it is
+  // not sellable in this WhatsApp CRM catalogue.
   {
     key: 'sms',
     name: 'SMS',
     short: 'SMS',
     provider: 'MSG91 · Twilio',
     description: 'Transactional and promotional SMS across global routes.',
-    status: ServiceStatus.ACTIVE,
+    status: ServiceStatus.COMING_SOON,
   },
   {
     key: 'instagram',
@@ -70,7 +72,7 @@ const SERVICES: Array<Partial<Service>> = [
     short: 'IG',
     provider: 'Meta Cloud API',
     description: 'Direct-message automation for Instagram business accounts.',
-    status: ServiceStatus.BETA,
+    status: ServiceStatus.COMING_SOON,
   },
 ];
 
@@ -176,6 +178,28 @@ const PLANS: Array<Partial<Plan>> = [
       max_contacts: 1000,
     },
   },
+  {
+    code: 'STARTER',
+    serviceKey: 'whatsapp',
+    name: 'Starter',
+    tier: 1,
+    trialDays: 14,
+    status: PlanStatus.ACTIVE,
+    features: {
+      wa_campaigns: true,
+      campaign_analytics: true,
+      agent_inbox: true,
+      api_access: false,
+      support_level: 'email_priority',
+    },
+    limits: {
+      max_workspaces_per_service: 2,
+      max_agents: 3,
+      max_members: 10,
+      history_retention_days: 90,
+      max_contacts: 10000,
+    },
+  },
 ];
 
 /** Idempotently insert base currencies, then countries (FK order). */
@@ -203,7 +227,7 @@ export async function seedReferenceData(): Promise<void> {
     .createQueryBuilder()
     .insert()
     .values(SERVICES)
-    .orIgnore()
+    .orUpdate(['name', 'short', 'provider', 'description', 'status'], ['key'])
     .execute();
   console.log(`[seed] services ensured (${SERVICES.length})`);
 

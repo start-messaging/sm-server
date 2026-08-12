@@ -12,6 +12,9 @@ import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity'
 import { WorkspaceServiceRate } from '../workspaces/entities/workspace-service-rate.entity';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
+import { WabaAccount } from '../whatsapp/entities/waba-account.entity';
+import { PhoneNumber } from '../whatsapp/entities/phone-number.entity';
+import { WaSubscription } from '../whatsapp/entities/wa-subscription.entity';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 import { AdminWalletsController } from './admin-wallets.controller';
@@ -38,6 +41,9 @@ import { WorkspaceRatesService } from './workspace-rates.service';
       WorkspaceInvitation,
       Service,
       ServiceCountryRate,
+      WabaAccount,
+      PhoneNumber,
+      WaSubscription,
     ]),
     // AdminModule: staff JWT strategy + guards for `@StaffAuth`.
     // CountriesModule: currency cross-check when writing a ladder.

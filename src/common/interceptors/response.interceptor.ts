@@ -25,6 +25,27 @@ export class ResponseInterceptor<T> implements NestInterceptor<
       return next.handle();
     }
 
+    // Meta hub.challenge must be the raw challenge string (text/plain), not
+    // our JSON success envelope — otherwise Verify and save fails.
+    // SSE streams must stay MessageEvent payloads (text/event-stream).
+    const req = context.switchToHttp().getRequest<{
+      method?: string;
+      path?: string;
+      url?: string;
+      headers?: { accept?: string };
+    }>();
+    const path = req.path ?? req.url ?? '';
+    const accept = req.headers?.accept ?? '';
+    if (
+      (req.method === 'GET' &&
+        (path === '/v1/webhooks/meta' ||
+          path.startsWith('/v1/webhooks/meta?'))) ||
+      accept.includes('text/event-stream') ||
+      path.includes('/whatsapp/events')
+    ) {
+      return next.handle();
+    }
+
     return next.handle().pipe(
       map((value: T): SuccessEnvelope<T> | T => {
         if (

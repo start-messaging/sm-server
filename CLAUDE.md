@@ -1,10 +1,19 @@
-# CLAUDE.md
+# CLAUDE.md — sm-server
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code / Cursor when working in **sm-server**.
+
+## Workspace hub (read first)
+
+- Hub: [../.claude/CLAUDE.md](../.claude/CLAUDE.md)
+- WhatsApp plan: [../.claude/plans/whatsapp-deep-build-plan.md](../.claude/plans/whatsapp-deep-build-plan.md)
+- Multitask models: [../.claude/AGENT_MODELS.md](../.claude/AGENT_MODELS.md)
+- Skills: [../.claude/skills/](../.claude/skills/) (mirrored in `../.cursor/skills/`)
+
+**Product:** WhatsApp CRM API for `whatsapp.startmessaging.com`. Meta **Tech Provider** — Meta bills conversations; we bill CRM SaaS (Razorpay). Do **not** debit wallet on send. SMS product lives in sibling `server/` — keep separate. Sibling UIs: `sm-client`, `sm-admin`.
 
 ## Project
 
-`sm-server` is a NestJS 11 (TypeScript) application bootstrapped from the standard `@nestjs/cli` starter. It currently contains only the default `AppModule` / `AppController` / `AppService` scaffolding — no domain code has been added yet.
+`sm-server` is a NestJS 11 (TypeScript) API: customer/admin/referral auth, workspaces, members, services/plans/rates, wallets (parked for message monetization), and WhatsApp entity scaffold under `src/whatsapp/` (connect/messaging still to build).
 
 Entry point: `src/main.ts` boots `AppModule`, wires Swagger via `setupSwagger()` from [src/config/swagger.config.ts](src/config/swagger.config.ts), and listens on `process.env.PORT ?? 3000`.
 

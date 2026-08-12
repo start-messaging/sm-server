@@ -1,8 +1,8 @@
 import * as Joi from 'joi';
 
-/** Dev default CORS allowlist: the client + admin SPA dev servers. */
+/** Dev default CORS allowlist: the client + admin SPA (http + https for Vite SSL). */
 export const DEFAULT_CORS_ORIGINS =
-  'http://localhost:5173,http://localhost:5174';
+  'http://localhost:5173,https://localhost:5173,http://localhost:5174,https://localhost:5174';
 
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
@@ -78,6 +78,34 @@ export const envValidationSchema = Joi.object({
 
   // SMS (provider is swappable via SMS_DRIVER; only console implemented yet).
   SMS_DRIVER: Joi.string().valid('console', 'twilio').default('console'),
+
+  // PostHog — analytics + server OTEL logs. Optional; telemetry silently no-ops when absent.
+  POSTHOG_API_KEY: Joi.string().optional(),
+  POSTHOG_HOST: Joi.string().uri().default('https://us.i.posthog.com'),
+
+  // Cloudflare R2 — object storage for WA media / educational assets.
+  R2_ACCOUNT_ID: Joi.string().optional(),
+  R2_ACCESS_KEY_ID: Joi.string().optional(),
+  R2_SECRET_ACCESS_KEY: Joi.string().optional(),
+  R2_BUCKET_NAME: Joi.string().optional(),
+  R2_PUBLIC_URL: Joi.string().uri().optional(),
+
+  // Meta WhatsApp Cloud API.
+  META_APP_ID: Joi.string().optional(),
+  META_APP_SECRET: Joi.string().optional(),
+  META_GRAPH_VERSION: Joi.string().default('v21.0'),
+  META_WEBHOOK_VERIFY_TOKEN: Joi.string().optional(),
+
+  // Encryption key for WABA access tokens (AES-256-GCM). Must be a 64-char hex string (32 bytes).
+  // Generate with: openssl rand -hex 32
+  ENCRYPTION_KEY: Joi.string()
+    .pattern(/^[0-9a-fA-F]{64}$/)
+    .required(),
+
+  // Razorpay — SaaS CRM subscriptions only. NOT used for message wallet top-up.
+  RAZORPAY_KEY_ID: Joi.string().optional(),
+  RAZORPAY_KEY_SECRET: Joi.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: Joi.string().optional(),
 })
   .unknown(true)
   // Cooldown must fit inside the code's lifetime: if it didn't, an expired
@@ -138,4 +166,24 @@ export interface EnvVars {
   MAILGUN_DOMAIN?: string;
 
   SMS_DRIVER: 'console' | 'twilio';
+
+  POSTHOG_API_KEY?: string;
+  POSTHOG_HOST: string;
+
+  R2_ACCOUNT_ID?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_BUCKET_NAME?: string;
+  R2_PUBLIC_URL?: string;
+
+  META_APP_ID?: string;
+  META_APP_SECRET?: string;
+  META_GRAPH_VERSION: string;
+  META_WEBHOOK_VERIFY_TOKEN?: string;
+
+  ENCRYPTION_KEY: string;
+
+  RAZORPAY_KEY_ID?: string;
+  RAZORPAY_KEY_SECRET?: string;
+  RAZORPAY_WEBHOOK_SECRET?: string;
 }
