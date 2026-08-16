@@ -55,6 +55,9 @@ export const WA_ERR = {
   /** Phone number has hit its daily messaging cap. */
   PHONE_DAILY_LIMIT_REACHED: 'PHONE_DAILY_LIMIT_REACHED',
 
+  /** Message could not be delivered to the recipient WhatsApp number. */
+  MESSAGE_UNDELIVERABLE: 'MESSAGE_UNDELIVERABLE',
+
   /** Phone number is banned by Meta. */
   PHONE_BANNED: 'PHONE_BANNED',
 

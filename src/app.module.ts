@@ -25,6 +25,7 @@ import { UsersModule } from './users/users.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     CustomersAdminModule,
     WhatsappModule,
     PaymentsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

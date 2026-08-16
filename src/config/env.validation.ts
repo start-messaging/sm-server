@@ -106,6 +106,10 @@ export const envValidationSchema = Joi.object({
   RAZORPAY_KEY_ID: Joi.string().optional(),
   RAZORPAY_KEY_SECRET: Joi.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().optional(),
+
+  // Firebase Cloud Messaging (web push). Optional JSON string of a service
+  // account key. When unset, token registration still works but sends no-op.
+  FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().optional(),
 })
   .unknown(true)
   // Cooldown must fit inside the code's lifetime: if it didn't, an expired
@@ -186,4 +190,6 @@ export interface EnvVars {
   RAZORPAY_KEY_ID?: string;
   RAZORPAY_KEY_SECRET?: string;
   RAZORPAY_WEBHOOK_SECRET?: string;
+
+  FIREBASE_SERVICE_ACCOUNT_JSON?: string;
 }

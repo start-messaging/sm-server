@@ -51,4 +51,12 @@ export class WaMessage extends BaseEntity {
     nullable: true,
   })
   metaMessageId!: string | null;
+
+  /** Meta Graph / webhook error code when status is failed (e.g. 131049). */
+  @Column({ name: 'failure_code', type: 'int', nullable: true })
+  failureCode!: number | null;
+
+  /** Human-readable failure detail from Meta (title or error_data.details). */
+  @Column({ name: 'failure_reason', type: 'text', nullable: true })
+  failureReason!: string | null;
 }

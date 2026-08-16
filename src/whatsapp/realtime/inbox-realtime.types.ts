@@ -7,6 +7,9 @@ export interface InboxUpdatedEvent {
   conversationId: string;
   reason: InboxRealtimeReason;
   at: string;
+  /** Optional — used for browser notifications on inbound. */
+  contactName?: string | null;
+  contactPhone?: string | null;
 }
 
 export interface InboxHeartbeatEvent {

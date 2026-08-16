@@ -81,12 +81,15 @@ export class WhatsappContactsController {
     @UploadedFile() file: { buffer: Buffer; originalname: string },
   ) {
     const content = file.buffer.toString('utf-8');
-    const lines = content.split('\n').filter((l: string) => l.trim());
+    const lines = content
+      .split(/\r?\n/)
+      .map((l: string) => l.trim())
+      .filter(Boolean);
     // Skip header row
     const dataLines = lines.slice(1);
     const rows = dataLines
       .map((line: string) => {
-        const parts = line.split(',');
+        const parts = parseCsvLine(line);
         return {
           phoneE164: (parts[0] ?? '').trim(),
           name: (parts[1] ?? '').trim() || undefined,
@@ -98,4 +101,36 @@ export class WhatsappContactsController {
 
     return this.contactsService.importCsv(ctx.workspace.id, rows);
   }
+}
+
+/** RFC 4180-compliant CSV line splitter — handles double-quoted fields. */
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      fields.push(field);
+      field = '';
+    } else {
+      field += ch;
+    }
+  }
+  fields.push(field);
+  return fields;
 }

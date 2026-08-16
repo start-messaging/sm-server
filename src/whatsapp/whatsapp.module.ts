@@ -8,11 +8,15 @@ import { WhatsappInboxEventsController } from './controllers/whatsapp-inbox-even
 import { WhatsappContactsController } from './controllers/whatsapp-contacts.controller';
 import { WhatsappCampaignsController } from './controllers/whatsapp-campaigns.controller';
 import { WhatsappBillingController } from './controllers/whatsapp-billing.controller';
+import { AdminTemplateExamplesController } from './controllers/admin-template-examples.controller';
+import { AdminConnectedWabasController } from './controllers/admin-connected-wabas.controller';
+import { WhatsappTemplateExamplesController } from './controllers/whatsapp-template-examples.controller';
 import { WhatsappRealtimeModule } from './realtime/whatsapp-realtime.module';
 import { PhoneNumber } from './entities/phone-number.entity';
 import { WabaAccount } from './entities/waba-account.entity';
 import { WaWebhookEvent } from './entities/wa-webhook-event.entity';
 import { WaTemplate } from './entities/wa-template.entity';
+import { WaTemplateExample } from './entities/wa-template-example.entity';
 import { WaContact } from './entities/wa-contact.entity';
 import { WaConversation } from './entities/wa-conversation.entity';
 import { WaMessage } from './entities/wa-message.entity';
@@ -29,12 +33,15 @@ import { WhatsappContactsService } from './services/whatsapp-contacts.service';
 import { WhatsappCampaignsService } from './services/whatsapp-campaigns.service';
 import { WhatsappBillingService } from './services/whatsapp-billing.service';
 import { BillingProviderService } from './services/billing-provider.service';
+import { WaTemplateExamplesService } from './services/wa-template-examples.service';
+import { AdminConnectedWabasService } from './services/admin-connected-wabas.service';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
 import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity';
 import { WorkspaceMemberGuard } from '../workspaces/guards/workspace-member.guard';
 import { Plan } from '../plans/entities/plan.entity';
 import { PaymentsModule } from '../payments/payments.module';
+import { AdminModule } from '../admin/admin.module';
 
 /**
  * WhatsApp CRM — self-contained vertical.
@@ -48,6 +55,7 @@ import { PaymentsModule } from '../payments/payments.module';
       PhoneNumber,
       WaWebhookEvent,
       WaTemplate,
+      WaTemplateExample,
       WaContact,
       WaConversation,
       WaMessage,
@@ -62,6 +70,7 @@ import { PaymentsModule } from '../payments/payments.module';
     WaCampaignQueueModule,
     WhatsappRealtimeModule,
     PaymentsModule,
+    AdminModule,
   ],
   providers: [
     MetaGraphClient,
@@ -73,6 +82,8 @@ import { PaymentsModule } from '../payments/payments.module';
     WhatsappCampaignsService,
     WhatsappBillingService,
     BillingProviderService,
+    WaTemplateExamplesService,
+    AdminConnectedWabasService,
     WorkspaceMemberGuard,
   ],
   controllers: [
@@ -84,6 +95,9 @@ import { PaymentsModule } from '../payments/payments.module';
     WhatsappContactsController,
     WhatsappCampaignsController,
     WhatsappBillingController,
+    AdminTemplateExamplesController,
+    AdminConnectedWabasController,
+    WhatsappTemplateExamplesController,
   ],
 })
 export class WhatsappModule {}

@@ -7,6 +7,8 @@ import { PlatformRole } from '../../admin/enums/platform-role.enum';
 import { Wallet } from '../../wallets/entities/wallet.entity';
 import { Workspace } from '../../workspaces/entities/workspace.entity';
 import { seedReferenceData } from './reference.seed';
+import { DEFAULT_TEMPLATE_EXAMPLES } from '../../whatsapp/data/default-template-examples';
+import { WaTemplateExample } from '../../whatsapp/entities/wa-template-example.entity';
 
 loadEnv();
 
@@ -71,12 +73,29 @@ async function backfillWallets(): Promise<void> {
   console.log(`[seed] backfilled ${orphaned.length} wallet(s)`);
 }
 
+/** Insert missing curated WhatsApp gallery recipes (idempotent by slug). */
+async function seedTemplateExamples(): Promise<void> {
+  const repo = dataSource.getRepository(WaTemplateExample);
+  let inserted = 0;
+  for (const seed of DEFAULT_TEMPLATE_EXAMPLES) {
+    const existing = await repo.findOne({
+      where: { slug: seed.slug },
+      withDeleted: true,
+    });
+    if (existing) continue;
+    await repo.save(repo.create(seed));
+    inserted += 1;
+  }
+  console.log(`[seed] template examples ensured (+${inserted} new)`);
+}
+
 async function run(): Promise<void> {
   await dataSource.initialize();
   try {
     await seedReferenceData();
     await seedBootstrapStaff();
     await backfillWallets();
+    await seedTemplateExamples();
   } finally {
     await dataSource.destroy();
   }

@@ -87,6 +87,8 @@ export class WhatsappMessagesService {
       body: m.body,
       timestamp: m.timestamp.toISOString(),
       templateName: m.templateName,
+      failureCode: m.failureCode,
+      failureReason: m.failureReason,
     }));
 
     return { messages, total };

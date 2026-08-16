@@ -66,12 +66,14 @@ export class WhatsappSendService {
       conversationId,
     );
 
+    let templateBody: string | null = null;
     if (input.type === 'template') {
-      await this.requireApprovedTemplate(
+      const template = await this.requireApprovedTemplate(
         workspaceId,
         input.templateName,
         input.templateLanguage,
       );
+      templateBody = fillTemplateBody(template, input.parameters);
     }
 
     const token = decryptToken(waba.accessTokenEncrypted);
@@ -96,7 +98,7 @@ export class WhatsappSendService {
       conversationId,
       direction: 'outbound',
       status: 'sent',
-      body: input.type === 'text' ? input.text : null,
+      body: input.type === 'text' ? input.text : templateBody,
       templateName: input.type === 'template' ? input.templateName : null,
       timestamp: new Date(),
       metaMessageId,
@@ -104,7 +106,8 @@ export class WhatsappSendService {
     await this.messages.save(message);
 
     conversation.lastMessageBody =
-      message.body ?? `[Template: ${message.templateName}]`;
+      message.body ??
+      (message.templateName ? `[Template: ${message.templateName}]` : null);
     conversation.lastMessageAt = message.timestamp;
     await this.conversations.save(conversation);
 
@@ -199,16 +202,34 @@ export class WhatsappSendService {
   private mapMetaSendError(err: unknown): never {
     if (err instanceof AppException) {
       const details = (err.getResponse() as Record<string, unknown>)
-        ?.details as { code?: number; error_subcode?: number } | undefined;
+        ?.details as {
+        code?: number;
+        error_subcode?: number;
+        error_data?: { details?: string };
+        error_user_msg?: string;
+        message?: string;
+      } | undefined;
       const subcode = details?.error_subcode;
       const code = details?.code;
+      const detailMsg =
+        details?.error_user_msg ??
+        details?.error_data?.details ??
+        details?.message;
 
-      if (code === 368 || subcode === 2388093) {
+      // Payment / billing on WABA (Tech Provider — never wallet copy).
+      if (
+        code === 368 ||
+        code === 131042 ||
+        code === 131047 ||
+        subcode === 2388093
+      ) {
         throw new AppException(
           {
             code: WA_ERR.META_PAYMENT_REQUIRED,
             message:
+              detailMsg ??
               'Meta payment method not configured on WABA. Add a card in WhatsApp Manager.',
+            details,
           },
           402,
         );
@@ -217,9 +238,47 @@ export class WhatsappSendService {
         throw new AppException(
           {
             code: WA_ERR.META_BILLING_ERROR,
-            message: 'Meta billing error — payment declined.',
+            message:
+              detailMsg ?? 'Meta billing error — payment declined.',
+            details,
           },
           402,
+        );
+      }
+      if (code === 131026) {
+        throw new AppException(
+          {
+            code: WA_ERR.MESSAGE_UNDELIVERABLE,
+            message:
+              detailMsg ??
+              'Message could not be delivered to this WhatsApp number.',
+            details,
+          },
+          422,
+        );
+      }
+      if (code === 130429 || code === 131048) {
+        throw new AppException(
+          {
+            code: WA_ERR.PHONE_DAILY_LIMIT_REACHED,
+            message:
+              detailMsg ??
+              'WhatsApp messaging limit reached. Try again later.',
+            details,
+          },
+          429,
+        );
+      }
+      // Prefer Meta user copy over generic "Invalid parameter".
+      if (detailMsg) {
+        throw new AppException(
+          {
+            code: (err.getResponse() as { code?: string })?.code ??
+              WA_ERR.WABA_CONNECT_FAILED,
+            message: detailMsg,
+            details,
+          },
+          err.getStatus(),
         );
       }
     }
@@ -280,6 +339,31 @@ export class WhatsappSendService {
       body: m.body,
       timestamp: m.timestamp.toISOString(),
       templateName: m.templateName,
+      failureCode: m.failureCode,
+      failureReason: m.failureReason,
     };
   }
+}
+
+/**
+ * Substitute {{1}}, {{2}}… in the template BODY with the send-time parameter
+ * texts so the inbox can show what the customer actually received.
+ */
+function fillTemplateBody(
+  template: WaTemplate,
+  parameters?: Record<string, string>[],
+): string | null {
+  const body = template.components.find((c) => c.type === 'BODY')?.text;
+  if (!body) return null;
+  if (!parameters?.length) return body;
+
+  return body.replace(/\{\{(\d+)\}\}/g, (match, n: string) => {
+    const idx = Number(n) - 1;
+    if (!Number.isFinite(idx) || idx < 0 || idx >= parameters.length) {
+      return match;
+    }
+    const param = parameters[idx]!;
+    const text = param['text'] ?? Object.values(param)[0];
+    return text != null && String(text).length > 0 ? String(text) : match;
+  });
 }

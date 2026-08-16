@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { Observable } from 'rxjs';
+import { FcmPushService } from '../../notifications/services/fcm-push.service';
 import { REDIS } from '../../redis/redis.constants';
 import {
   inboxChannel,
@@ -14,18 +15,23 @@ const HEARTBEAT_MS = 25_000;
 /**
  * Fan-out for inbox SSE. Publish on the shared Redis client; each SSE
  * connection gets its own subscriber duplicate so unsubscribe is per-client.
+ * Inbound also triggers FCM web push (when Firebase is configured).
  */
 @Injectable()
 export class InboxRealtimeService implements OnModuleDestroy {
   private readonly logger = new Logger(InboxRealtimeService.name);
   private readonly subscribers = new Set<Redis>();
 
-  constructor(@Inject(REDIS) private readonly redis: Redis) {}
+  constructor(
+    @Inject(REDIS) private readonly redis: Redis,
+    private readonly fcmPush: FcmPushService,
+  ) {}
 
   async publishInboxUpdated(
     workspaceId: string,
     conversationId: string,
     reason: InboxRealtimeReason,
+    meta?: { contactName?: string | null; contactPhone?: string | null },
   ): Promise<void> {
     const event: InboxUpdatedEvent = {
       type: 'inbox.updated',
@@ -33,6 +39,8 @@ export class InboxRealtimeService implements OnModuleDestroy {
       conversationId,
       reason,
       at: new Date().toISOString(),
+      contactName: meta?.contactName ?? null,
+      contactPhone: meta?.contactPhone ?? null,
     };
     try {
       await this.redis.publish(
@@ -45,6 +53,23 @@ export class InboxRealtimeService implements OnModuleDestroy {
           err instanceof Error ? err.message : String(err)
         }`,
       );
+    }
+
+    if (reason === 'inbound') {
+      void this.fcmPush
+        .notifyInboxInbound({
+          workspaceId,
+          conversationId,
+          contactName: meta?.contactName,
+          contactPhone: meta?.contactPhone,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `FCM inbox push failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
     }
   }
 

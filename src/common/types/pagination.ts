@@ -22,18 +22,21 @@ export interface Paginated<T> {
 export function paginate<T>(
   items: T[],
   total: number,
-  query: { page: number; pageSize: number },
+  query: { page?: number; pageSize?: number },
 ): Paginated<T> {
-  const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+  const page = query.page && query.page > 0 ? query.page : 1;
+  const pageSize =
+    query.pageSize && query.pageSize > 0 ? query.pageSize : 20;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return {
     items,
     meta: {
-      page: query.page,
-      pageSize: query.pageSize,
+      page,
+      pageSize,
       total,
       totalPages,
-      hasNext: query.page < totalPages,
-      hasPrev: query.page > 1,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
     },
   };
 }

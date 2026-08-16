@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppException } from '../../common/exceptions/app.exception';
+import { parseMobileOrThrow } from '../../common/phone/parse-mobile';
 import { WaContact } from '../entities/wa-contact.entity';
 
 export interface CreateContactInput {
@@ -34,8 +35,10 @@ export class WhatsappContactsService {
   }
 
   async create(workspaceId: string, input: CreateContactInput) {
+    const { e164 } = parseMobileOrThrow(input.phoneE164);
+
     const existing = await this.contacts.findOne({
-      where: { workspaceId, phoneE164: input.phoneE164 },
+      where: { workspaceId, phoneE164: e164 },
     });
     if (existing) {
       throw new AppException(
@@ -50,7 +53,7 @@ export class WhatsappContactsService {
     const contact = this.contacts.create({
       workspaceId,
       name: input.name ?? null,
-      phoneE164: input.phoneE164,
+      phoneE164: e164,
       email: input.email ?? null,
       tags: input.tags ?? [],
       optedIn: true,
@@ -101,8 +104,16 @@ export class WhatsappContactsService {
     let skipped = 0;
 
     for (const row of rows) {
+      let e164: string;
+      try {
+        ({ e164 } = parseMobileOrThrow(row.phoneE164));
+      } catch {
+        skipped++;
+        continue;
+      }
+
       const existing = await this.contacts.findOne({
-        where: { workspaceId, phoneE164: row.phoneE164 },
+        where: { workspaceId, phoneE164: e164 },
       });
       if (existing) {
         skipped++;
@@ -112,7 +123,7 @@ export class WhatsappContactsService {
       const contact = this.contacts.create({
         workspaceId,
         name: row.name ?? null,
-        phoneE164: row.phoneE164,
+        phoneE164: e164,
         email: row.email ?? null,
         tags: row.tags ? row.tags.split(',').map((t) => t.trim()) : [],
         optedIn: true,

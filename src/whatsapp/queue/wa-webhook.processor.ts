@@ -299,6 +299,10 @@ export class WaWebhookProcessor extends WorkerHost {
               workspaceId,
               conversation.id,
               'inbound',
+              {
+                contactName: conversation.contactName,
+                contactPhone: conversation.contactPhone,
+              },
             );
           }
         }
@@ -384,6 +388,14 @@ export class WaWebhookProcessor extends WorkerHost {
             this.isStatusAdvancement(message.status, mappedStatus)
           ) {
             message.status = mappedStatus;
+            if (mappedStatus === 'failed') {
+              const extracted = extractStatusFailure(statusUpdate);
+              message.failureCode = extracted.code;
+              message.failureReason = extracted.reason;
+            } else {
+              message.failureCode = null;
+              message.failureReason = null;
+            }
             await this.messages.save(message);
             await this.inboxRealtime.publishInboxUpdated(
               message.workspaceId,
@@ -851,4 +863,26 @@ export class WaWebhookProcessor extends WorkerHost {
     if (incoming === 'failed') return true;
     return order[incoming] > order[current];
   }
+}
+
+/** Pull Meta `statuses[].errors[0]` into a compact failure record. */
+function extractStatusFailure(statusUpdate: Record<string, unknown>): {
+  code: number | null;
+  reason: string | null;
+} {
+  const errors = statusUpdate['errors'];
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return { code: null, reason: null };
+  }
+  const first = errors[0] as Record<string, unknown>;
+  const code = typeof first['code'] === 'number' ? first['code'] : null;
+  const errorData = first['error_data'] as
+    | { details?: string }
+    | undefined;
+  const reason =
+    (typeof errorData?.details === 'string' && errorData.details) ||
+    (typeof first['title'] === 'string' && first['title']) ||
+    (typeof first['message'] === 'string' && first['message']) ||
+    null;
+  return { code, reason };
 }
