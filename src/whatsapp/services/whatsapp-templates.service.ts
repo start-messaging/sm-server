@@ -44,13 +44,16 @@ export class WhatsappTemplatesService {
     const waba = await this.requireWaba(workspaceId);
     const token = decryptToken(waba.accessTokenEncrypted);
 
+    // Meta rejects (INVALID_FORMAT) variable templates without sample values.
+    const components = attachVariableExamples(dto.components);
+
     const result = await this.meta.createTemplate(
       waba.metaWabaId,
       {
         name: dto.name,
         language: dto.language,
         category: dto.category,
-        components: dto.components,
+        components,
       },
       token,
     );
@@ -62,7 +65,7 @@ export class WhatsappTemplatesService {
       language: dto.language,
       category: dto.category,
       status: 'PENDING',
-      components: dto.components,
+      components,
       metaTemplateId: result.id,
       rejectionReason: null,
     });
@@ -83,7 +86,15 @@ export class WhatsappTemplatesService {
     const waba = await this.requireWaba(workspaceId);
     const token = decryptToken(waba.accessTokenEncrypted);
 
-    await this.meta.deleteTemplate(waba.metaWabaId, template.name, token);
+    try {
+      await this.meta.deleteTemplate(waba.metaWabaId, template.name, token);
+    } catch (err) {
+      // Already deleted in WhatsApp Manager — still clear our row.
+      if (!isMetaTemplateMissing(err)) throw err;
+      this.logger.warn(
+        `Meta template "${template.name}" already missing; removing local row ${template.id}`,
+      );
+    }
     await this.templates.softRemove(template);
   }
 
@@ -92,6 +103,9 @@ export class WhatsappTemplatesService {
     const token = decryptToken(waba.accessTokenEncrypted);
 
     const metaTemplates = await this.meta.getTemplates(waba.metaWabaId, token);
+    const seenKeys = new Set(
+      metaTemplates.map((mt) => `${mt.name}::${mt.language}`),
+    );
 
     for (const mt of metaTemplates) {
       const existing = await this.templates.findOne({
@@ -117,6 +131,16 @@ export class WhatsappTemplatesService {
           rejectionReason: mt.rejected_reason ?? null,
         });
         await this.templates.save(t);
+      }
+    }
+
+    // Drop local rows Meta no longer returns (deleted in Manager, etc.).
+    const locals = await this.templates.find({
+      where: { workspaceId, wabaAccountId: waba.id },
+    });
+    for (const local of locals) {
+      if (!seenKeys.has(`${local.name}::${local.language}`)) {
+        await this.templates.softRemove(local);
       }
     }
 
@@ -153,4 +177,64 @@ export class WhatsappTemplatesService {
       updatedAt: t.updatedAt.toISOString(),
     };
   }
+}
+
+const POSITIONAL_VAR_RE = /\{\{(\d+)\}\}/g;
+
+/** Meta subcode when deleting a template that is already gone. */
+const META_TEMPLATE_MISSING_SUBCODE = 2593002;
+
+function isMetaTemplateMissing(err: unknown): boolean {
+  if (!(err instanceof AppException)) return false;
+  const details = err.getResponse();
+  const payload =
+    typeof details === 'object' && details !== null
+      ? (details as {
+          details?: { error_subcode?: number; message?: string; error_user_msg?: string };
+          message?: string;
+        })
+      : null;
+  const meta = payload?.details;
+  if (meta?.error_subcode === META_TEMPLATE_MISSING_SUBCODE) return true;
+  const msg = (
+    meta?.error_user_msg ??
+    meta?.message ??
+    payload?.message ??
+    ''
+  ).toLowerCase();
+  return (
+    msg.includes('does not exist') ||
+    msg.includes('template name does not exist') ||
+    msg.includes('no template exists')
+  );
+}
+
+/**
+ * Meta requires an `example` object for every HEADER/BODY that contains {{n}}.
+ * Without it, review returns REJECTED / INVALID_FORMAT.
+ */
+export function attachVariableExamples(
+  components: TemplateComponent[],
+): TemplateComponent[] {
+  return components.map((c) => {
+    if ((c.type !== 'BODY' && c.type !== 'HEADER') || !c.text) return c;
+    if (c.example) return c;
+
+    const indexes = [
+      ...new Set(
+        [...c.text.matchAll(POSITIONAL_VAR_RE)].map((m) => Number(m[1])),
+      ),
+    ].sort((a, b) => a - b);
+    if (indexes.length === 0) return c;
+
+    const samples = indexes.map((n) => `example_${n}`);
+    if (c.type === 'BODY') {
+      return { ...c, example: { body_text: [samples] } };
+    }
+    return {
+      ...c,
+      format: c.format ?? 'TEXT',
+      example: { header_text: samples },
+    };
+  });
 }

@@ -9,15 +9,49 @@ import {
 } from 'typeorm';
 import { WabaAccount } from './waba-account.entity';
 
-/** Typed dispatch surface for the async worker. */
+/**
+ * Typed dispatch surface for the async worker.
+ * Values match Meta `changes[].field` where possible; `messages` is split into
+ * inbound vs status. Legacy aliases kept for rows already stored in DB.
+ */
 export enum WaWebhookEventType {
+  // messages field (split)
   MESSAGE_STATUS = 'message_status',
   INBOUND_MESSAGE = 'inbound_message',
-  TEMPLATE_STATUS = 'template_status',
+  // legacy aliases (stable DB enum values)
+  TEMPLATE_STATUS = 'template_status', // message_template_status_update
   ACCOUNT_UPDATE = 'account_update',
-  PHONE_QUALITY_UPDATE = 'phone_quality_update',
-  VERIFICATION_UPDATE = 'verification_update',
+  PHONE_QUALITY_UPDATE = 'phone_quality_update', // phone_number_quality_update
+  VERIFICATION_UPDATE = 'verification_update', // account_review_update
   SECURITY = 'security',
+  // remaining whatsapp_business_account fields (Meta exact names)
+  ACCOUNT_ALERTS = 'account_alerts',
+  ACCOUNT_SETTINGS_UPDATE = 'account_settings_update',
+  AUTOMATIC_EVENTS = 'automatic_events',
+  BUSINESS_CAPABILITY_UPDATE = 'business_capability_update',
+  BUSINESS_STATUS_UPDATE = 'business_status_update',
+  BUSINESS_USERNAME_UPDATES = 'business_username_updates',
+  CALLS = 'calls',
+  FLOWS = 'flows',
+  GROUP_LIFECYCLE_UPDATE = 'group_lifecycle_update',
+  GROUP_PARTICIPANTS_UPDATE = 'group_participants_update',
+  GROUP_SETTINGS_UPDATE = 'group_settings_update',
+  GROUP_STATUS_UPDATE = 'group_status_update',
+  HISTORY = 'history',
+  MESSAGE_ECHOES = 'message_echoes',
+  MESSAGE_TEMPLATE_COMPONENTS_UPDATE = 'message_template_components_update',
+  MESSAGE_TEMPLATE_QUALITY_UPDATE = 'message_template_quality_update',
+  MESSAGING_HANDOVERS = 'messaging_handovers',
+  PARTNER_SOLUTIONS = 'partner_solutions',
+  PAYMENT_CONFIGURATION_UPDATE = 'payment_configuration_update',
+  PHONE_NUMBER_NAME_UPDATE = 'phone_number_name_update',
+  SMB_APP_STATE_SYNC = 'smb_app_state_sync',
+  SMB_MESSAGE_ECHOES = 'smb_message_echoes',
+  STANDBY = 'standby',
+  TEMPLATE_CATEGORY_UPDATE = 'template_category_update',
+  TEMPLATE_CORRECT_CATEGORY_DETECTION = 'template_correct_category_detection',
+  TRACKING_EVENTS = 'tracking_events',
+  USER_PREFERENCES = 'user_preferences',
   OTHER = 'other',
 }
 

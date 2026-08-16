@@ -19,6 +19,9 @@ interface MetaErrorResponse {
     type?: string;
     code?: number;
     error_subcode?: number;
+    is_transient?: boolean;
+    error_user_title?: string;
+    error_user_msg?: string;
     fbtrace_id?: string;
   };
 }
@@ -232,8 +235,18 @@ export class MetaGraphClient {
     }
 
     if (!res.ok || json.error) {
-      const msg = json.error?.message ?? `Meta API error ${res.status}`;
-      this.logger.warn(`Meta Graph error from ${url}: ${msg}`);
+      // Prefer Meta's end-user copy when present (e.g. reserved sample names).
+      const msg =
+        json.error?.error_user_msg ??
+        json.error?.error_user_title ??
+        json.error?.message ??
+        `Meta API error ${res.status}`;
+      this.logger.warn(
+        `Meta Graph error from ${url}: ${json.error?.message ?? msg}` +
+          (json.error?.error_subcode != null
+            ? ` (subcode ${json.error.error_subcode})`
+            : ''),
+      );
       throw new AppException(
         { code: WA_ERR.WABA_CONNECT_FAILED, message: msg, details: json.error },
         502,

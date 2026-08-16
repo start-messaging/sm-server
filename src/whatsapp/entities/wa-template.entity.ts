@@ -15,6 +15,11 @@ export interface TemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
   text?: string;
   format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  /** Required by Meta when text contains {{n}} variables. */
+  example?: {
+    body_text?: string[][];
+    header_text?: string[];
+  };
 }
 
 @Index('idx_wa_templates_waba', ['wabaAccountId'])

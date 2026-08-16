@@ -52,6 +52,21 @@ export class WhatsappConnectController {
     return this.connect.getStatus(ctx.workspace.id);
   }
 
+  /**
+   * Pull connection state from Meta Graph (manual refresh).
+   * Use when a webhook may have been missed after deleting a phone/WABA in Meta.
+   */
+  @Post('sync')
+  @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Sync WhatsApp connection status from Meta' })
+  syncFromMeta(
+    @Param('slug') _slug: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.connect.syncFromMeta(ctx.workspace.id);
+  }
+
   @Post('register-phone')
   @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
   @ApiBearerAuth()

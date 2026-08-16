@@ -7,6 +7,7 @@ import { WaMessage } from '../entities/wa-message.entity';
 import { WaTemplate } from '../entities/wa-template.entity';
 import { WabaAccount } from '../entities/waba-account.entity';
 import { PhoneNumber } from '../entities/phone-number.entity';
+import { WorkspaceService } from '../../workspaces/entities/workspace-service.entity';
 import { WA_WEBHOOK_QUEUE } from './wa-webhook.constants';
 import { WaWebhookProcessor } from './wa-webhook.processor';
 import { WhatsappRealtimeModule } from '../realtime/whatsapp-realtime.module';
@@ -21,6 +22,7 @@ import { WhatsappRealtimeModule } from '../realtime/whatsapp-realtime.module';
       WaTemplate,
       WabaAccount,
       PhoneNumber,
+      WorkspaceService,
     ]),
     WhatsappRealtimeModule,
   ],

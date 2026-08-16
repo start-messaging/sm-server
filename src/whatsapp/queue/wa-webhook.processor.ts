@@ -15,8 +15,23 @@ import {
   WabaAccount,
   WabaAccountStatus,
 } from '../entities/waba-account.entity';
-import { PhoneNumber, WaQualityRating } from '../entities/phone-number.entity';
+import {
+  PhoneNumber,
+  WaPhoneNumberStatus,
+  WaQualityRating,
+} from '../entities/phone-number.entity';
 import { InboxRealtimeService } from '../realtime/inbox-realtime.service';
+import {
+  WorkspaceService,
+  WorkspaceServiceStatus,
+} from '../../workspaces/entities/workspace-service.entity';
+import {
+  MetaAccountUpdateEvent,
+  MetaInboundMessageType,
+  MetaMessageStatus,
+  MetaTemplateStatusEvent,
+  MetaWabaBanState,
+} from '../webhooks/meta-webhook.constants';
 import { WA_WEBHOOK_QUEUE } from './wa-webhook.constants';
 
 export interface WaWebhookJobData {
@@ -83,6 +98,10 @@ export class WaWebhookProcessor extends WorkerHost {
     }
   }
 
+  /**
+   * Exhaustive dispatch on stored event type (= Meta field, with messages split).
+   * Unimplemented fields acknowledge as no-op so we never silently drop awareness.
+   */
   private async routeEvent(event: WaWebhookEvent): Promise<void> {
     switch (event.eventType) {
       case WaWebhookEventType.INBOUND_MESSAGE:
@@ -100,11 +119,109 @@ export class WaWebhookProcessor extends WorkerHost {
       case WaWebhookEventType.PHONE_QUALITY_UPDATE:
         await this.handlePhoneQualityUpdate(event);
         break;
-      default:
-        this.logger.debug(
-          `Processing wa-webhook ${event.id} type=${event.eventType} (no-op handler)`,
+      case WaWebhookEventType.VERIFICATION_UPDATE:
+        this.noopField(event, 'account_review_update');
+        break;
+      case WaWebhookEventType.SECURITY:
+        this.noopField(event, 'security');
+        break;
+      case WaWebhookEventType.ACCOUNT_ALERTS:
+        this.noopField(event, 'account_alerts');
+        break;
+      case WaWebhookEventType.ACCOUNT_SETTINGS_UPDATE:
+        this.noopField(event, 'account_settings_update');
+        break;
+      case WaWebhookEventType.AUTOMATIC_EVENTS:
+        this.noopField(event, 'automatic_events');
+        break;
+      case WaWebhookEventType.BUSINESS_CAPABILITY_UPDATE:
+        this.noopField(event, 'business_capability_update');
+        break;
+      case WaWebhookEventType.BUSINESS_STATUS_UPDATE:
+        this.noopField(event, 'business_status_update');
+        break;
+      case WaWebhookEventType.BUSINESS_USERNAME_UPDATES:
+        this.noopField(event, 'business_username_updates');
+        break;
+      case WaWebhookEventType.CALLS:
+        this.noopField(event, 'calls');
+        break;
+      case WaWebhookEventType.FLOWS:
+        this.noopField(event, 'flows');
+        break;
+      case WaWebhookEventType.GROUP_LIFECYCLE_UPDATE:
+        this.noopField(event, 'group_lifecycle_update');
+        break;
+      case WaWebhookEventType.GROUP_PARTICIPANTS_UPDATE:
+        this.noopField(event, 'group_participants_update');
+        break;
+      case WaWebhookEventType.GROUP_SETTINGS_UPDATE:
+        this.noopField(event, 'group_settings_update');
+        break;
+      case WaWebhookEventType.GROUP_STATUS_UPDATE:
+        this.noopField(event, 'group_status_update');
+        break;
+      case WaWebhookEventType.HISTORY:
+        this.noopField(event, 'history');
+        break;
+      case WaWebhookEventType.MESSAGE_ECHOES:
+        this.noopField(event, 'message_echoes');
+        break;
+      case WaWebhookEventType.MESSAGE_TEMPLATE_COMPONENTS_UPDATE:
+        this.noopField(event, 'message_template_components_update');
+        break;
+      case WaWebhookEventType.MESSAGE_TEMPLATE_QUALITY_UPDATE:
+        this.noopField(event, 'message_template_quality_update');
+        break;
+      case WaWebhookEventType.MESSAGING_HANDOVERS:
+        this.noopField(event, 'messaging_handovers');
+        break;
+      case WaWebhookEventType.PARTNER_SOLUTIONS:
+        this.noopField(event, 'partner_solutions');
+        break;
+      case WaWebhookEventType.PAYMENT_CONFIGURATION_UPDATE:
+        this.noopField(event, 'payment_configuration_update');
+        break;
+      case WaWebhookEventType.PHONE_NUMBER_NAME_UPDATE:
+        this.noopField(event, 'phone_number_name_update');
+        break;
+      case WaWebhookEventType.SMB_APP_STATE_SYNC:
+        this.noopField(event, 'smb_app_state_sync');
+        break;
+      case WaWebhookEventType.SMB_MESSAGE_ECHOES:
+        this.noopField(event, 'smb_message_echoes');
+        break;
+      case WaWebhookEventType.STANDBY:
+        this.noopField(event, 'standby');
+        break;
+      case WaWebhookEventType.TEMPLATE_CATEGORY_UPDATE:
+        this.noopField(event, 'template_category_update');
+        break;
+      case WaWebhookEventType.TEMPLATE_CORRECT_CATEGORY_DETECTION:
+        this.noopField(event, 'template_correct_category_detection');
+        break;
+      case WaWebhookEventType.TRACKING_EVENTS:
+        this.noopField(event, 'tracking_events');
+        break;
+      case WaWebhookEventType.USER_PREFERENCES:
+        this.noopField(event, 'user_preferences');
+        break;
+      case WaWebhookEventType.OTHER:
+        this.noopField(event, 'other');
+        break;
+      default: {
+        const _exhaustive: never = event.eventType;
+        this.logger.warn(
+          `wa-webhook ${event.id}: unhandled eventType=${String(_exhaustive)}`,
         );
+      }
     }
+  }
+
+  private noopField(event: WaWebhookEvent, field: string): void {
+    this.logger.debug(
+      `wa-webhook ${event.id} field=${field} acknowledged (no-op handler)`,
+    );
   }
 
   private async handleInboundMessage(event: WaWebhookEvent): Promise<void> {
@@ -119,9 +236,6 @@ export class WaWebhookProcessor extends WorkerHost {
         const value = change.value ?? {};
         const metaMessages =
           (value['messages'] as Array<Record<string, unknown>>) ?? [];
-        const metadata = value['metadata'] as
-          | Record<string, string>
-          | undefined;
         const contacts =
           (value['contacts'] as Array<Record<string, string>>) ?? [];
 
@@ -137,14 +251,12 @@ export class WaWebhookProcessor extends WorkerHost {
                 ?.profile?.name ?? null)
             : null;
           const wamid = msg['id'] as string;
-          const msgType = msg['type'] as string;
-          const textBody =
-            (msg['text'] as Record<string, string> | undefined)?.['body'] ??
-            null;
+          const msgType =
+            (msg['type'] as string) ?? MetaInboundMessageType.UNKNOWN;
+          const textBody = this.extractInboundBody(msg, msgType);
           const ts = msg['timestamp'] as string;
           const timestamp = ts ? new Date(parseInt(ts, 10) * 1000) : new Date();
 
-          // Find or create conversation
           let conversation = await this.conversations.findOne({
             where: { workspaceId, contactPhone: from },
           });
@@ -168,7 +280,6 @@ export class WaWebhookProcessor extends WorkerHost {
             await this.conversations.save(conversation);
           }
 
-          // Insert message (dedup on wamid)
           const existing = await this.messages.findOne({
             where: { metaMessageId: wamid },
           });
@@ -192,6 +303,54 @@ export class WaWebhookProcessor extends WorkerHost {
           }
         }
       }
+    }
+  }
+
+  /** Switch on Meta inbound message type; unknown types still persist a placeholder. */
+  private extractInboundBody(
+    msg: Record<string, unknown>,
+    msgType: string,
+  ): string | null {
+    switch (msgType) {
+      case MetaInboundMessageType.TEXT:
+        return (
+          (msg['text'] as Record<string, string> | undefined)?.['body'] ?? null
+        );
+      case MetaInboundMessageType.IMAGE:
+      case MetaInboundMessageType.AUDIO:
+      case MetaInboundMessageType.VIDEO:
+      case MetaInboundMessageType.DOCUMENT:
+      case MetaInboundMessageType.STICKER:
+        return (
+          (msg[msgType] as Record<string, string> | undefined)?.['caption'] ??
+          `[${msgType}]`
+        );
+      case MetaInboundMessageType.LOCATION:
+        return '[location]';
+      case MetaInboundMessageType.CONTACTS:
+        return '[contacts]';
+      case MetaInboundMessageType.INTERACTIVE:
+        return '[interactive]';
+      case MetaInboundMessageType.BUTTON:
+        return (
+          (msg['button'] as Record<string, string> | undefined)?.['text'] ??
+          '[button]'
+        );
+      case MetaInboundMessageType.REACTION:
+        return '[reaction]';
+      case MetaInboundMessageType.ORDER:
+        return '[order]';
+      case MetaInboundMessageType.SYSTEM:
+        return '[system]';
+      case MetaInboundMessageType.UNKNOWN:
+      case MetaInboundMessageType.UNSUPPORTED:
+        return `[${msgType}]`;
+      default:
+        this.logger.debug(`inbound message type=${msgType} (unlisted)`);
+        return (
+          (msg['text'] as Record<string, string> | undefined)?.['body'] ??
+          `[${msgType}]`
+        );
     }
   }
 
@@ -250,6 +409,9 @@ export class WaWebhookProcessor extends WorkerHost {
         const templateName = value['message_template_name'] as
           | string
           | undefined;
+        const templateLang = value['message_template_language'] as
+          | string
+          | undefined;
         const templateStatus = value['event'] as string | undefined;
         const reason = value['reason'] as string | undefined;
 
@@ -258,23 +420,74 @@ export class WaWebhookProcessor extends WorkerHost {
         const workspaceId = await this.resolveWorkspaceId(event.wabaAccountId);
         if (!workspaceId) continue;
 
-        const template = await this.templates.findOne({
-          where: { workspaceId, name: templateName },
-        });
-        if (template) {
-          template.status =
-            templateStatus.toUpperCase() as WaTemplate['status'];
-          if (reason) template.rejectionReason = reason;
-          await this.templates.save(template);
+        const normalized = templateStatus.toUpperCase();
+        switch (normalized) {
+          case MetaTemplateStatusEvent.APPROVED:
+          case MetaTemplateStatusEvent.REJECTED:
+          case MetaTemplateStatusEvent.PENDING:
+          case MetaTemplateStatusEvent.PAUSED:
+          case MetaTemplateStatusEvent.DISABLED: {
+            const where: {
+              workspaceId: string;
+              name: string;
+              language?: string;
+            } = { workspaceId, name: templateName };
+            if (templateLang) where.language = templateLang;
+
+            const template = await this.templates.findOne({ where });
+            if (template) {
+              template.status = normalized as WaTemplate['status'];
+              if (reason) template.rejectionReason = reason;
+              if (normalized === MetaTemplateStatusEvent.APPROVED) {
+                template.rejectionReason = null;
+              }
+              await this.templates.save(template);
+            }
+            break;
+          }
+          case MetaTemplateStatusEvent.PENDING_DELETION:
+          case MetaTemplateStatusEvent.DELETED: {
+            const where: {
+              workspaceId: string;
+              name: string;
+              language?: string;
+            } = { workspaceId, name: templateName };
+            if (templateLang) where.language = templateLang;
+
+            const template = await this.templates.findOne({ where });
+            if (template) {
+              await this.templates.softRemove(template);
+              this.logger.log(
+                `Removed local template after Meta ${normalized}: ${templateName}` +
+                  (templateLang ? `/${templateLang}` : ''),
+              );
+            }
+            break;
+          }
+          case MetaTemplateStatusEvent.LIMIT_EXCEEDED:
+          case MetaTemplateStatusEvent.IN_APPEAL:
+          case MetaTemplateStatusEvent.REINSTATED:
+          case MetaTemplateStatusEvent.FLAGGED:
+            this.logger.debug(
+              `message_template_status_update event=${normalized} acknowledged (no-op persist) name=${templateName}`,
+            );
+            break;
+          default:
+            this.logger.debug(
+              `message_template_status_update event=${normalized} (unlisted) name=${templateName}`,
+            );
+            break;
         }
       }
     }
   }
 
   /**
-   * account_update: Meta fires this for partner events (PARTNER_ADDED, disconnect
-   * signals, etc.) and account-level state changes. Persist useful fields on the
-   * WabaAccount when present; log structured data; never crash on unknown shapes.
+   * account_update: exhaustive switch on Meta `value.event`.
+   * Terminal connection events disconnect CRM; informational events no-op.
+   *
+   * Note: for PARTNER_APP_INSTALLED, `entry.id` is often the **owner business id**,
+   * while the WABA id lives in `value.waba_info.waba_id`. Prefer that when present.
    */
   private async handleAccountUpdate(event: WaWebhookEvent): Promise<void> {
     const payload = event.payload;
@@ -288,54 +501,216 @@ export class WaWebhookProcessor extends WorkerHost {
       for (const change of changes) {
         const value = change.value ?? {};
         const accountEvent = value['event'] as string | undefined;
-        const metaWabaId = entry.id;
+        const wabaInfo = value['waba_info'] as
+          | Record<string, unknown>
+          | undefined;
+        const metaWabaId =
+          (typeof wabaInfo?.['waba_id'] === 'string'
+            ? wabaInfo['waba_id']
+            : undefined) ?? entry.id;
 
         this.logger.log(
           `account_update received: event=${accountEvent ?? 'unknown'} waba=${metaWabaId ?? 'unknown'}`,
           { eventId: event.id, accountEvent, metaWabaId, value },
         );
 
-        if (!metaWabaId) continue;
+        if (!metaWabaId || !accountEvent) {
+          this.logger.debug(
+            `account_update missing waba/event — acknowledging no-op`,
+          );
+          continue;
+        }
 
         const waba = await this.wabaAccounts.findOne({
           where: { metaWabaId },
         });
         if (!waba) {
           this.logger.warn(
-            `account_update: no WabaAccount found for metaWabaId=${metaWabaId}`,
+            `account_update: no WabaAccount found for metaWabaId=${metaWabaId} (ok if connect still in flight)`,
           );
           continue;
         }
 
-        if (accountEvent === 'DISABLED' || accountEvent === 'DISCONNECTED') {
-          waba.status = WabaAccountStatus.DISCONNECTED;
-          await this.wabaAccounts.save(waba);
-          this.logger.log(
-            `WabaAccount ${waba.id} status → DISCONNECTED (event=${accountEvent})`,
-          );
-        } else if (accountEvent === 'SUSPENDED') {
-          waba.status = WabaAccountStatus.SUSPENDED;
-          await this.wabaAccounts.save(waba);
-          this.logger.log(`WabaAccount ${waba.id} status → SUSPENDED`);
-        } else if (
-          accountEvent === 'PARTNER_ADDED' ||
-          accountEvent === 'REINSTATED'
-        ) {
-          waba.status = WabaAccountStatus.ACTIVE;
-          await this.wabaAccounts.save(waba);
-          this.logger.log(
-            `WabaAccount ${waba.id} status → ACTIVE (event=${accountEvent})`,
-          );
+        switch (accountEvent) {
+          case MetaAccountUpdateEvent.ACCOUNT_DELETED:
+          case MetaAccountUpdateEvent.PARTNER_REMOVED:
+          case MetaAccountUpdateEvent.PARTNER_APP_UNINSTALLED:
+          case MetaAccountUpdateEvent.DISABLED:
+          case MetaAccountUpdateEvent.DISCONNECTED:
+          case MetaAccountUpdateEvent.ACCOUNT_OFFBOARDED:
+            await this.disconnectWaba(waba, accountEvent, {
+              softDeletePhones: true,
+            });
+            break;
+
+          case MetaAccountUpdateEvent.PHONE_NUMBER_REMOVED:
+            await this.handlePhoneNumberRemoved(waba, value);
+            break;
+
+          case MetaAccountUpdateEvent.SUSPENDED:
+            waba.status = WabaAccountStatus.SUSPENDED;
+            await this.wabaAccounts.save(waba);
+            this.logger.log(`WabaAccount ${waba.id} status → SUSPENDED`);
+            break;
+
+          case MetaAccountUpdateEvent.DISABLED_UPDATE:
+            await this.handleDisabledUpdate(waba, value);
+            break;
+
+          case MetaAccountUpdateEvent.PARTNER_ADDED:
+          case MetaAccountUpdateEvent.PARTNER_APP_INSTALLED:
+          case MetaAccountUpdateEvent.REINSTATED:
+          case MetaAccountUpdateEvent.ACCOUNT_RECONNECTED:
+            waba.status = WabaAccountStatus.ACTIVE;
+            await this.wabaAccounts.save(waba);
+            this.logger.log(
+              `WabaAccount ${waba.id} status → ACTIVE (event=${accountEvent})`,
+            );
+            break;
+
+          case MetaAccountUpdateEvent.ACCOUNT_RESTRICTION:
+          case MetaAccountUpdateEvent.ACCOUNT_VIOLATION:
+          case MetaAccountUpdateEvent.AD_ACCOUNT_LINKED:
+          case MetaAccountUpdateEvent.AUTH_INTL_PRICE_ELIGIBILITY_UPDATE:
+          case MetaAccountUpdateEvent.BUSINESS_PRIMARY_LOCATION_COUNTRY_UPDATE:
+          case MetaAccountUpdateEvent.MM_LITE_TERMS_SIGNED:
+          case MetaAccountUpdateEvent.PARTNER_CLIENT_CERTIFICATION_STATUS_UPDATE:
+          case MetaAccountUpdateEvent.VOLUME_BASED_PRICING_TIER_UPDATE:
+            this.logger.debug(
+              `account_update event=${accountEvent} acknowledged (no-op)`,
+            );
+            break;
+
+          default:
+            this.logger.debug(
+              `account_update event=${accountEvent} unlisted — acknowledged (no-op)`,
+            );
+            break;
         }
-        // Unknown events are logged above but do not crash
       }
     }
   }
 
+  private async handleDisabledUpdate(
+    waba: WabaAccount,
+    value: Record<string, unknown>,
+  ): Promise<void> {
+    const banInfo = value['ban_info'] as Record<string, unknown> | undefined;
+    const banState =
+      typeof banInfo?.['waba_ban_state'] === 'string'
+        ? banInfo['waba_ban_state']
+        : undefined;
+
+    switch (banState) {
+      case MetaWabaBanState.REINSTATE:
+        waba.status = WabaAccountStatus.ACTIVE;
+        await this.wabaAccounts.save(waba);
+        this.logger.log(
+          `WabaAccount ${waba.id} status → ACTIVE (DISABLED_UPDATE REINSTATE)`,
+        );
+        break;
+      case MetaWabaBanState.DISABLE:
+      case MetaWabaBanState.SCHEDULE_FOR_DISABLE:
+        waba.status = WabaAccountStatus.SUSPENDED;
+        await this.wabaAccounts.save(waba);
+        await this.deactivateWorkspaceWhatsapp(waba.workspaceId);
+        this.logger.log(
+          `WabaAccount ${waba.id} status → SUSPENDED (DISABLED_UPDATE ${banState})`,
+        );
+        break;
+      default:
+        this.logger.debug(
+          `DISABLED_UPDATE ban_state=${banState ?? 'missing'} acknowledged (no-op beyond log)`,
+        );
+        break;
+    }
+  }
+
+  private async disconnectWaba(
+    waba: WabaAccount,
+    accountEvent: string,
+    opts: { softDeletePhones: boolean },
+  ): Promise<void> {
+    waba.status = WabaAccountStatus.DISCONNECTED;
+    await this.wabaAccounts.save(waba);
+    if (opts.softDeletePhones) {
+      await this.phoneNumbers.softDelete({ wabaAccountId: waba.id });
+    }
+    // Soft-delete WABA so reconnect is not blocked by a leftover row
+    // (connect only allows one non-deleted WABA per workspace).
+    await this.wabaAccounts.softDelete({ id: waba.id });
+    await this.deactivateWorkspaceWhatsapp(waba.workspaceId);
+    this.logger.log(
+      `WabaAccount ${waba.id} → DISCONNECTED+soft-deleted (event=${accountEvent})`,
+    );
+  }
+
+  /**
+   * Meta removed a sender from the WABA. Soft-delete our phone row; if none
+   * remain active, treat the workspace as disconnected so Connect UI updates.
+   */
+  private async handlePhoneNumberRemoved(
+    waba: WabaAccount,
+    value: Record<string, unknown>,
+  ): Promise<void> {
+    const rawPhone = value['phone_number'];
+    const digits =
+      typeof rawPhone === 'string' ? rawPhone.replace(/\D/g, '') : '';
+
+    const phones = await this.phoneNumbers.find({
+      where: { wabaAccountId: waba.id },
+    });
+
+    for (const phone of phones) {
+      const phoneDigits = phone.displayNumberE164.replace(/\D/g, '');
+      const match =
+        !digits ||
+        phoneDigits === digits ||
+        phoneDigits.endsWith(digits) ||
+        digits.endsWith(phoneDigits);
+      if (match) {
+        await this.phoneNumbers.softDelete({ id: phone.id });
+        this.logger.log(
+          `PhoneNumber ${phone.id} soft-deleted (PHONE_NUMBER_REMOVED ${phone.displayNumberE164})`,
+        );
+      }
+    }
+
+    const remaining = await this.phoneNumbers.count({
+      where: {
+        wabaAccountId: waba.id,
+        status: WaPhoneNumberStatus.ACTIVE,
+      },
+    });
+    if (remaining === 0) {
+      await this.disconnectWaba(
+        waba,
+        MetaAccountUpdateEvent.PHONE_NUMBER_REMOVED,
+        { softDeletePhones: false },
+      );
+    }
+  }
+
+  private async deactivateWorkspaceWhatsapp(
+    workspaceId: string,
+  ): Promise<void> {
+    await this.phoneNumbers.manager
+      .createQueryBuilder()
+      .update(WorkspaceService)
+      .set({
+        status: WorkspaceServiceStatus.PENDING_SETUP,
+        activatedAt: null,
+      })
+      .where('workspace_id = :workspaceId AND service_key = :key', {
+        workspaceId,
+        key: 'whatsapp',
+      })
+      .execute();
+  }
+
   /**
    * phone_quality_update: Meta fires this when a phone number's quality rating
-   * changes (GREEN → YELLOW → RED) or messaging limits change. Update the
-   * PhoneNumber entity with the new quality/status if present.
+   * changes (GREEN → YELLOW → RED) or messaging limits change.
    */
   private async handlePhoneQualityUpdate(event: WaWebhookEvent): Promise<void> {
     const payload = event.payload;
@@ -444,15 +819,20 @@ export class WaWebhookProcessor extends WorkerHost {
 
   private mapMetaStatus(status: string): MessageStatus | null {
     switch (status) {
-      case 'sent':
+      case MetaMessageStatus.SENT:
         return 'sent';
-      case 'delivered':
+      case MetaMessageStatus.DELIVERED:
         return 'delivered';
-      case 'read':
+      case MetaMessageStatus.READ:
         return 'read';
-      case 'failed':
+      case MetaMessageStatus.FAILED:
         return 'failed';
+      case MetaMessageStatus.DELETED:
+      case MetaMessageStatus.WARNING:
+        this.logger.debug(`message status=${status} acknowledged (no-op map)`);
+        return null;
       default:
+        this.logger.debug(`message status=${status} unlisted (no-op map)`);
         return null;
     }
   }

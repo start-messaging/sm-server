@@ -10,6 +10,7 @@ import {
 } from '../entities/phone-number.entity';
 import { WaConversation } from '../entities/wa-conversation.entity';
 import { WaMessage } from '../entities/wa-message.entity';
+import { WaTemplate } from '../entities/wa-template.entity';
 import { WA_ERR } from '../whatsapp-error-codes';
 import { InboxRealtimeService } from '../realtime/inbox-realtime.service';
 import { MetaGraphClient, MetaSendMessageInput } from './meta-graph.client';
@@ -48,6 +49,8 @@ export class WhatsappSendService {
     private readonly conversations: Repository<WaConversation>,
     @InjectRepository(WaMessage)
     private readonly messages: Repository<WaMessage>,
+    @InjectRepository(WaTemplate)
+    private readonly templates: Repository<WaTemplate>,
     private readonly inboxRealtime: InboxRealtimeService,
   ) {}
 
@@ -62,6 +65,15 @@ export class WhatsappSendService {
       workspaceId,
       conversationId,
     );
+
+    if (input.type === 'template') {
+      await this.requireApprovedTemplate(
+        workspaceId,
+        input.templateName,
+        input.templateLanguage,
+      );
+    }
+
     const token = decryptToken(waba.accessTokenEncrypted);
 
     const metaBody = this.buildMetaPayload(conversation.contactPhone, input);
@@ -91,7 +103,6 @@ export class WhatsappSendService {
     });
     await this.messages.save(message);
 
-    // Update conversation last message
     conversation.lastMessageBody =
       message.body ?? `[Template: ${message.templateName}]`;
     conversation.lastMessageAt = message.timestamp;
@@ -120,19 +131,69 @@ export class WhatsappSendService {
       template: {
         name: input.templateName,
         language: { code: input.templateLanguage },
-        components: input.parameters
+        components: input.parameters?.length
           ? [
               {
                 type: 'body',
                 parameters: input.parameters.map((p) => ({
-                  type: 'text',
-                  ...p,
+                  type: 'text' as const,
+                  text: p['text'] ?? Object.values(p)[0] ?? '',
                 })),
               },
             ]
           : undefined,
       },
     };
+  }
+
+  private async requireApprovedTemplate(
+    workspaceId: string,
+    name: string,
+    language: string,
+  ): Promise<WaTemplate> {
+    const template = await this.templates.findOne({
+      where: { workspaceId, name, language },
+    });
+    if (!template) {
+      throw new AppException(
+        {
+          code: WA_ERR.TEMPLATE_NOT_FOUND,
+          message: `Template "${name}" (${language}) was not found. Sync from Meta or create it first.`,
+        },
+        404,
+      );
+    }
+    if (template.status === 'PENDING') {
+      throw new AppException(
+        {
+          code: WA_ERR.TEMPLATE_PENDING_APPROVAL,
+          message:
+            'This template is still pending Meta approval. Wait for APPROVED before sending.',
+        },
+        422,
+      );
+    }
+    if (template.status === 'REJECTED') {
+      throw new AppException(
+        {
+          code: WA_ERR.TEMPLATE_REJECTED,
+          message:
+            template.rejectionReason ??
+            'This template was rejected by Meta. Fix it on the Templates page.',
+        },
+        422,
+      );
+    }
+    if (template.status !== 'APPROVED') {
+      throw new AppException(
+        {
+          code: WA_ERR.TEMPLATE_NOT_FOUND,
+          message: `Template "${name}" is ${template.status} and cannot be sent.`,
+        },
+        422,
+      );
+    }
+    return template;
   }
 
   private mapMetaSendError(err: unknown): never {
@@ -142,7 +203,6 @@ export class WhatsappSendService {
       const subcode = details?.error_subcode;
       const code = details?.code;
 
-      // Meta billing errors: 368 = payment method required
       if (code === 368 || subcode === 2388093) {
         throw new AppException(
           {
@@ -153,7 +213,6 @@ export class WhatsappSendService {
           402,
         );
       }
-      // Generic billing / payment declined
       if (subcode === 2388094 || subcode === 2388095) {
         throw new AppException(
           {

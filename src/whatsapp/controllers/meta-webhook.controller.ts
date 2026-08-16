@@ -235,6 +235,8 @@ interface MetaWebhookChange {
 
 interface MetaWebhookEntry {
   id?: string;
+  /** Unix seconds — Meta webhook trigger time; stabilizes lifecycle dedup. */
+  time?: number;
   changes?: MetaWebhookChange[];
 }
 
@@ -244,9 +246,18 @@ function buildDedupKey(
   entry: MetaWebhookEntry,
   change: MetaWebhookChange,
 ): string {
-  const wabaId = entry.id ?? 'unknown';
   const field = change.field ?? 'unknown';
   const value = change.value ?? {};
+  const wabaInfo = value['waba_info'] as Record<string, unknown> | undefined;
+  // Prefer real WABA id — entry.id is often the owner business portfolio id.
+  const scopeId =
+    (typeof wabaInfo?.['waba_id'] === 'string'
+      ? wabaInfo['waba_id']
+      : undefined) ??
+    entry.id ??
+    'unknown';
+  const entryTime =
+    typeof entry.time === 'number' ? String(entry.time) : 'nots';
 
   // For message status: wamid + status
   const statuses = value['statuses'];
@@ -262,29 +273,117 @@ function buildDedupKey(
     return `msg:${m.id}`;
   }
 
-  // Fallback: hash of JSON
-  const ts = Date.now();
-  return `other:${wabaId}:${field}:${ts}`;
+  // account_update / template status: include WABA + Meta event time so a
+  // later reconnect (new PARTNER_APP_INSTALLED) is not collapsed with an
+  // earlier install under the same business id.
+  const accountEvent = value['event'];
+  if (typeof accountEvent === 'string') {
+    const phone =
+      typeof value['phone_number'] === 'string' ? value['phone_number'] : '';
+    const templateName =
+      typeof value['message_template_name'] === 'string'
+        ? value['message_template_name']
+        : '';
+    const templateLang =
+      typeof value['message_template_language'] === 'string'
+        ? value['message_template_language']
+        : '';
+    const partnerAppId =
+      typeof wabaInfo?.['partner_app_id'] === 'string'
+        ? wabaInfo['partner_app_id']
+        : '';
+    return `field:${scopeId}:${field}:${accountEvent}:${phone}:${templateName}:${templateLang}:${partnerAppId}:${entryTime}`;
+  }
+
+  // Fallback: field + JSON hash of value (avoid Date.now — never dedups)
+  const fingerprint = Buffer.from(JSON.stringify(value))
+    .toString('base64url')
+    .slice(0, 48);
+  return `other:${scopeId}:${field}:${fingerprint}:${entryTime}`;
 }
 
 function deriveEventType(change: MetaWebhookChange): WaWebhookEventType {
-  const field = change.field;
-  if (field === 'messages') {
-    const value = change.value ?? {};
-    if (Array.isArray(value['statuses']))
-      return WaWebhookEventType.MESSAGE_STATUS;
-    if (Array.isArray(value['messages']))
-      return WaWebhookEventType.INBOUND_MESSAGE;
+  const field = change.field ?? '';
+
+  switch (field) {
+    case 'messages': {
+      const value = change.value ?? {};
+      if (Array.isArray(value['statuses'])) {
+        return WaWebhookEventType.MESSAGE_STATUS;
+      }
+      if (Array.isArray(value['messages'])) {
+        return WaWebhookEventType.INBOUND_MESSAGE;
+      }
+      // echoes / empty — still under messages topic
+      return WaWebhookEventType.OTHER;
+    }
+    case 'message_template_status_update':
+      return WaWebhookEventType.TEMPLATE_STATUS;
+    case 'account_update':
+      return WaWebhookEventType.ACCOUNT_UPDATE;
+    case 'phone_number_quality_update':
+      return WaWebhookEventType.PHONE_QUALITY_UPDATE;
+    case 'account_review_update':
+      return WaWebhookEventType.VERIFICATION_UPDATE;
+    case 'security':
+      return WaWebhookEventType.SECURITY;
+    case 'account_alerts':
+      return WaWebhookEventType.ACCOUNT_ALERTS;
+    case 'account_settings_update':
+      return WaWebhookEventType.ACCOUNT_SETTINGS_UPDATE;
+    case 'automatic_events':
+      return WaWebhookEventType.AUTOMATIC_EVENTS;
+    case 'business_capability_update':
+      return WaWebhookEventType.BUSINESS_CAPABILITY_UPDATE;
+    case 'business_status_update':
+      return WaWebhookEventType.BUSINESS_STATUS_UPDATE;
+    case 'business_username_updates':
+      return WaWebhookEventType.BUSINESS_USERNAME_UPDATES;
+    case 'calls':
+      return WaWebhookEventType.CALLS;
+    case 'flows':
+      return WaWebhookEventType.FLOWS;
+    case 'group_lifecycle_update':
+      return WaWebhookEventType.GROUP_LIFECYCLE_UPDATE;
+    case 'group_participants_update':
+      return WaWebhookEventType.GROUP_PARTICIPANTS_UPDATE;
+    case 'group_settings_update':
+      return WaWebhookEventType.GROUP_SETTINGS_UPDATE;
+    case 'group_status_update':
+      return WaWebhookEventType.GROUP_STATUS_UPDATE;
+    case 'history':
+      return WaWebhookEventType.HISTORY;
+    case 'message_echoes':
+      return WaWebhookEventType.MESSAGE_ECHOES;
+    case 'message_template_components_update':
+      return WaWebhookEventType.MESSAGE_TEMPLATE_COMPONENTS_UPDATE;
+    case 'message_template_quality_update':
+      return WaWebhookEventType.MESSAGE_TEMPLATE_QUALITY_UPDATE;
+    case 'messaging_handovers':
+      return WaWebhookEventType.MESSAGING_HANDOVERS;
+    case 'partner_solutions':
+      return WaWebhookEventType.PARTNER_SOLUTIONS;
+    case 'payment_configuration_update':
+      return WaWebhookEventType.PAYMENT_CONFIGURATION_UPDATE;
+    case 'phone_number_name_update':
+      return WaWebhookEventType.PHONE_NUMBER_NAME_UPDATE;
+    case 'smb_app_state_sync':
+      return WaWebhookEventType.SMB_APP_STATE_SYNC;
+    case 'smb_message_echoes':
+      return WaWebhookEventType.SMB_MESSAGE_ECHOES;
+    case 'standby':
+      return WaWebhookEventType.STANDBY;
+    case 'template_category_update':
+      return WaWebhookEventType.TEMPLATE_CATEGORY_UPDATE;
+    case 'template_correct_category_detection':
+      return WaWebhookEventType.TEMPLATE_CORRECT_CATEGORY_DETECTION;
+    case 'tracking_events':
+      return WaWebhookEventType.TRACKING_EVENTS;
+    case 'user_preferences':
+      return WaWebhookEventType.USER_PREFERENCES;
+    default:
+      return WaWebhookEventType.OTHER;
   }
-  if (field === 'message_template_status_update')
-    return WaWebhookEventType.TEMPLATE_STATUS;
-  if (field === 'account_update') return WaWebhookEventType.ACCOUNT_UPDATE;
-  if (field === 'phone_number_quality_update')
-    return WaWebhookEventType.PHONE_QUALITY_UPDATE;
-  if (field === 'account_review_update')
-    return WaWebhookEventType.VERIFICATION_UPDATE;
-  if (field === 'security') return WaWebhookEventType.SECURITY;
-  return WaWebhookEventType.OTHER;
 }
 
 function extractPhoneNumberId(change: MetaWebhookChange): string | null {

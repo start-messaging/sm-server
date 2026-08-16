@@ -13,13 +13,15 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AppException } from '../../common/exceptions/app.exception';
 import { parseMobileOrThrow } from '../../common/phone/parse-mobile';
+import { Country } from '../../countries/entities/country.entity';
 import {
   WorkspaceService,
   WorkspaceServiceStatus,
 } from '../../workspaces/entities/workspace-service.entity';
+import { Workspace } from '../../workspaces/entities/workspace.entity';
 import { encryptToken, decryptToken } from '../crypto/token-encryption';
 import {
   PhoneNumber,
@@ -155,19 +157,9 @@ export class WhatsappConnectService {
 
     // 7. Persist in a single transaction
     const result = await this.ds.transaction(async (em) => {
-      const existing = await em.findOne(WabaAccount, {
-        where: { workspaceId, serviceKey: SERVICE_KEY },
-      });
-      if (existing) {
-        throw new AppException(
-          {
-            code: WA_ERR.WABA_CONNECT_FAILED,
-            message:
-              'Workspace already has an active WhatsApp connection. Disconnect first.',
-          },
-          409,
-        );
-      }
+      // Align with getStatus: only block a truly live connection. Stale rows
+      // (webhook disconnect without soft-delete) must not 409 reconnect.
+      await this.retireStaleOrThrowIfLive(em, workspaceId);
 
       const encryptedToken = encryptToken(accessToken);
 
@@ -187,17 +179,17 @@ export class WhatsappConnectService {
       });
       await em.save(waba);
 
-      const rawE164 = phoneInfo.display_phone_number.replace(/[\s\-()]/g, '');
-      let e164: string;
-      let countryCode: string;
-      try {
-        const parsed = parseMobileOrThrow(rawE164);
-        e164 = parsed.e164;
-        countryCode = parsed.countryCode;
-      } catch {
-        e164 = rawE164.startsWith('+') ? rawE164 : `+${rawE164}`;
-        countryCode = 'ZZ';
-      }
+      const workspace = await em.findOne(Workspace, {
+        where: { id: workspaceId },
+        select: { countryCode: true },
+      });
+      const fallbackCountry = workspace?.countryCode ?? 'IN';
+
+      const { e164, countryCode } = await this.resolveSenderPhone(
+        em,
+        phoneInfo.display_phone_number,
+        fallbackCountry,
+      );
 
       const phone = em.create(PhoneNumber, {
         wabaAccountId: waba.id,
@@ -307,10 +299,8 @@ export class WhatsappConnectService {
   }
 
   /**
-   * Returns the shape the client expects: `WabaConnectionStatus`.
-   *
-   *   status: 'connected' | 'disconnected' | 'not_connected'
-   *   displayName, phoneNumber, wabaId, metaPaymentReady
+   * Local CRM status only. Meta is source of truth via webhooks; use
+   * `syncFromMeta` when the user manually refreshes connection state.
    */
   async getStatus(workspaceId: string): Promise<WabaConnectionStatusResponse> {
     const waba = await this.wabaAccounts.findOne({
@@ -334,8 +324,7 @@ export class WhatsappConnectService {
       order: { createdAt: 'DESC' },
     });
 
-    const status: WabaConnectionStatusResponse['status'] =
-      waba.status === WabaAccountStatus.ACTIVE ? 'connected' : 'disconnected';
+    const status = this.deriveLocalStatus(waba, phone);
 
     return {
       status,
@@ -344,13 +333,52 @@ export class WhatsappConnectService {
       metaPaymentReady: null,
       wabaId: waba.metaWabaId,
       phoneRegistrationPending:
-        !!phone && phone.status !== WaPhoneNumberStatus.ACTIVE,
+        status === 'connected' &&
+        !!phone &&
+        phone.status === WaPhoneNumberStatus.PENDING,
     };
   }
 
   /**
-   * Soft-disconnect: mark WABA disconnected, soft-delete, set workspace
-   * service back to pending_setup so Embedded Signup can re-run.
+   * Manual pull-sync from Meta Graph (missed-webhook escape hatch).
+   * If the WABA/phone is gone on Meta, retires local rows so Connect UI updates.
+   */
+  async syncFromMeta(
+    workspaceId: string,
+  ): Promise<WabaConnectionStatusResponse> {
+    const waba = await this.wabaAccounts.findOne({
+      where: { workspaceId, serviceKey: SERVICE_KEY },
+    });
+    if (!waba) {
+      return this.getStatus(workspaceId);
+    }
+
+    const phone = await this.phoneNumbers.findOne({
+      where: { workspaceId },
+      order: { createdAt: 'DESC' },
+    });
+
+    // Nothing live locally — still return status (no Graph call needed).
+    if (this.deriveLocalStatus(waba, phone) !== 'connected') {
+      return this.getStatus(workspaceId);
+    }
+
+    const stillLive = await this.checkMetaConnectionAlive(waba, phone);
+    if (!stillLive) {
+      await this.ds.transaction(async (em) => {
+        await this.retireWabaRow(em, waba.id, workspaceId);
+      });
+      this.logger.log(
+        `[sync] workspace ${workspaceId} retired after Meta pull-sync`,
+      );
+    }
+
+    return this.getStatus(workspaceId);
+  }
+
+  /**
+   * Soft-disconnect: mark WABA disconnected, soft-delete phones + WABA, set
+   * workspace service back to pending_setup so Embedded Signup can re-run.
    */
   async disconnect(workspaceId: string): Promise<{ disconnected: true }> {
     const waba = await this.wabaAccounts.findOne({
@@ -368,27 +396,167 @@ export class WhatsappConnectService {
     }
 
     await this.ds.transaction(async (em) => {
-      await em.update(
-        WabaAccount,
-        { id: waba.id },
-        { status: WabaAccountStatus.DISCONNECTED },
-      );
-      await em.softDelete(WabaAccount, { id: waba.id });
-      await em
-        .createQueryBuilder()
-        .update(WorkspaceService)
-        .set({
-          status: WorkspaceServiceStatus.PENDING_SETUP,
-          activatedAt: null,
-        })
-        .where('workspace_id = :workspaceId AND service_key = :key', {
-          workspaceId,
-          key: SERVICE_KEY,
-        })
-        .execute();
+      await this.retireWabaRow(em, waba.id, workspaceId);
     });
 
     this.logger.log(`[disconnect] workspace ${workspaceId} WABA soft-deleted`);
     return { disconnected: true };
+  }
+
+  private deriveLocalStatus(
+    waba: WabaAccount,
+    phone: PhoneNumber | null,
+  ): WabaConnectionStatusResponse['status'] {
+    if (waba.status === WabaAccountStatus.ACTIVE && phone) {
+      if (
+        phone.status === WaPhoneNumberStatus.ACTIVE ||
+        phone.status === WaPhoneNumberStatus.PENDING
+      ) {
+        return 'connected';
+      }
+    }
+    return 'disconnected';
+  }
+
+  /**
+   * Meta display formats vary; never persist a country_code that isn't in
+   * `countries` (FK). Fall back to the workspace country when parse fails or
+   * the ISO code isn't seeded yet.
+   */
+  private async resolveSenderPhone(
+    em: EntityManager,
+    displayPhoneNumber: string,
+    fallbackCountry: string,
+  ): Promise<{ e164: string; countryCode: string }> {
+    const raw = displayPhoneNumber.replace(/[\s\-()]/g, '');
+    const candidates = raw.startsWith('+') ? [raw] : [raw, `+${raw}`];
+
+    let e164 = raw.startsWith('+') ? raw : `+${raw}`;
+    let countryCode = fallbackCountry;
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = parseMobileOrThrow(candidate);
+        e164 = parsed.e164;
+        countryCode = parsed.countryCode;
+        break;
+      } catch {
+        // try next candidate
+      }
+    }
+
+    const known = await em.findOne(Country, {
+      where: { code: countryCode },
+      select: { code: true },
+    });
+    if (!known) {
+      this.logger.warn(
+        `[connect] country ${countryCode} not in countries table — using workspace fallback ${fallbackCountry}`,
+      );
+      countryCode = fallbackCountry;
+    }
+
+    return { e164, countryCode };
+  }
+
+  /**
+   * If a non-deleted WABA row exists but is not a live sender, soft-delete it
+   * so reconnect can insert. If it is live, 409.
+   */
+  private async retireStaleOrThrowIfLive(
+    em: EntityManager,
+    workspaceId: string,
+  ): Promise<void> {
+    const existing = await em.findOne(WabaAccount, {
+      where: { workspaceId, serviceKey: SERVICE_KEY },
+    });
+    if (!existing) return;
+
+    const phone = await em.findOne(PhoneNumber, {
+      where: { workspaceId },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (this.deriveLocalStatus(existing, phone) === 'connected') {
+      throw new AppException(
+        {
+          code: WA_ERR.WABA_CONNECT_FAILED,
+          message:
+            'Workspace already has an active WhatsApp connection. Disconnect first.',
+        },
+        409,
+      );
+    }
+
+    this.logger.log(
+      `[connect] retiring stale WABA ${existing.id} (status=${existing.status}) before reconnect`,
+    );
+    await this.retireWabaRow(em, existing.id, workspaceId);
+  }
+
+  private async retireWabaRow(
+    em: EntityManager,
+    wabaId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    await em.update(
+      WabaAccount,
+      { id: wabaId },
+      { status: WabaAccountStatus.DISCONNECTED },
+    );
+    await em.softDelete(PhoneNumber, { wabaAccountId: wabaId });
+    await em.softDelete(WabaAccount, { id: wabaId });
+    await em
+      .createQueryBuilder()
+      .update(WorkspaceService)
+      .set({
+        status: WorkspaceServiceStatus.PENDING_SETUP,
+        activatedAt: null,
+      })
+      .where('workspace_id = :workspaceId AND service_key = :key', {
+        workspaceId,
+        key: SERVICE_KEY,
+      })
+      .execute();
+  }
+
+  /** Returns false when Meta no longer has our sender / WABA. */
+  private async checkMetaConnectionAlive(
+    waba: WabaAccount,
+    phone: PhoneNumber | null,
+  ): Promise<boolean> {
+    try {
+      const token = decryptToken(waba.accessTokenEncrypted);
+      const phones = await this.meta.listPhoneNumbers(waba.metaWabaId, token);
+      if (!phones.length) {
+        this.logger.warn(
+          `[sync] WABA ${waba.metaWabaId} has no phones on Meta`,
+        );
+        return false;
+      }
+      if (phone && !phones.some((p) => p.id === phone.metaPhoneNumberId)) {
+        this.logger.warn(
+          `[sync] phone ${phone.metaPhoneNumberId} missing on Meta`,
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      const details =
+        err instanceof AppException
+          ? (err.getResponse() as { details?: { code?: number } })
+          : null;
+      const metaCode = details?.details?.code;
+      if (metaCode === 100 || metaCode === 33 || metaCode === 190) {
+        this.logger.warn(
+          `[sync] Meta unreachable for WABA ${waba.metaWabaId} (code=${metaCode})`,
+        );
+        return false;
+      }
+      this.logger.warn(
+        `[sync] Graph check failed (keeping connected): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return true;
+    }
   }
 }
