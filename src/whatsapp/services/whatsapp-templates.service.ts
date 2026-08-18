@@ -10,7 +10,8 @@ import {
   TemplateCategory,
 } from '../entities/wa-template.entity';
 import { WA_ERR } from '../whatsapp-error-codes';
-import { MetaGraphClient } from './meta-graph.client';
+import { MetaGraphClient, type MetaTemplate } from './meta-graph.client';
+import { parseTemplateCategory } from '../utils/template-category';
 
 @Injectable()
 export class WhatsappTemplatesService {
@@ -64,6 +65,8 @@ export class WhatsappTemplatesService {
       name: dto.name,
       language: dto.language,
       category: dto.category,
+      submittedCategory: dto.category,
+      correctCategory: null,
       status: 'PENDING',
       components,
       metaTemplateId: result.id,
@@ -113,6 +116,7 @@ export class WhatsappTemplatesService {
       });
 
       if (existing) {
+        applyMetaCategory(existing, mt);
         existing.status = mt.status as WaTemplate['status'];
         existing.metaTemplateId = mt.id;
         existing.components = (mt.components ?? []) as TemplateComponent[];
@@ -124,7 +128,9 @@ export class WhatsappTemplatesService {
           wabaAccountId: waba.id,
           name: mt.name,
           language: mt.language,
-          category: mt.category as TemplateCategory,
+          category: parseTemplateCategory(mt.category) ?? 'UTILITY',
+          submittedCategory: parseTemplateCategory(mt.category),
+          correctCategory: pendingCorrectCategory(mt),
           status: mt.status as WaTemplate['status'],
           components: (mt.components ?? []) as TemplateComponent[],
           metaTemplateId: mt.id,
@@ -170,6 +176,8 @@ export class WhatsappTemplatesService {
       name: t.name,
       language: t.language,
       category: t.category,
+      submittedCategory: t.submittedCategory,
+      correctCategory: t.correctCategory,
       status: t.status,
       components: t.components,
       rejectionReason: t.rejectionReason,
@@ -180,6 +188,22 @@ export class WhatsappTemplatesService {
 }
 
 const POSITIONAL_VAR_RE = /\{\{(\d+)\}\}/g;
+
+function pendingCorrectCategory(mt: MetaTemplate): TemplateCategory | null {
+  const current = parseTemplateCategory(mt.category);
+  const correct = parseTemplateCategory(mt.correct_category);
+  if (!current || !correct || current === correct) return null;
+  return correct;
+}
+
+function applyMetaCategory(existing: WaTemplate, mt: MetaTemplate): void {
+  if (!existing.submittedCategory) {
+    existing.submittedCategory = existing.category;
+  }
+  const current = parseTemplateCategory(mt.category);
+  if (current) existing.category = current;
+  existing.correctCategory = pendingCorrectCategory(mt);
+}
 
 /** Meta subcode when deleting a template that is already gone. */
 const META_TEMPLATE_MISSING_SUBCODE = 2593002;

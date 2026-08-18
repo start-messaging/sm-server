@@ -32,6 +32,10 @@ import {
   MetaTemplateStatusEvent,
   MetaWabaBanState,
 } from '../webhooks/meta-webhook.constants';
+import {
+  normalizeTemplateLanguage,
+  parseTemplateCategory,
+} from '../utils/template-category';
 import { WA_WEBHOOK_QUEUE } from './wa-webhook.constants';
 
 export interface WaWebhookJobData {
@@ -195,10 +199,10 @@ export class WaWebhookProcessor extends WorkerHost {
         this.noopField(event, 'standby');
         break;
       case WaWebhookEventType.TEMPLATE_CATEGORY_UPDATE:
-        this.noopField(event, 'template_category_update');
+        await this.handleTemplateCategoryUpdate(event);
         break;
       case WaWebhookEventType.TEMPLATE_CORRECT_CATEGORY_DETECTION:
-        this.noopField(event, 'template_correct_category_detection');
+        await this.handleTemplateCategoryUpdate(event);
         break;
       case WaWebhookEventType.TRACKING_EVENTS:
         this.noopField(event, 'tracking_events');
@@ -816,6 +820,113 @@ export class WaWebhookProcessor extends WorkerHost {
     if (!limitStr) return null;
     const match = limitStr.match(/(\d+)/);
     return match?.[1] ? parseInt(match[1], 10) : null;
+  }
+
+  /**
+   * `template_category_update` (and legacy `template_correct_category_detection`):
+   * impending = `correct_category` + current `new_category`;
+   * completed = `previous_category` + `new_category`.
+   */
+  private async handleTemplateCategoryUpdate(
+    event: WaWebhookEvent,
+  ): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const templateName = value['message_template_name'] as
+          | string
+          | undefined;
+        if (!templateName) continue;
+
+        const workspaceId = await this.resolveWorkspaceId(event.wabaAccountId);
+        if (!workspaceId) continue;
+
+        const template = await this.findLocalTemplate(workspaceId, {
+          name: templateName,
+          language: value['message_template_language'] as string | undefined,
+          metaTemplateId: value['message_template_id'],
+        });
+        if (!template) {
+          this.logger.debug(
+            `template_category_update: no local row for ${templateName}`,
+          );
+          continue;
+        }
+
+        const previous = parseTemplateCategory(value['previous_category']);
+        const correct = parseTemplateCategory(value['correct_category']);
+        const next = parseTemplateCategory(value['new_category']);
+
+        if (!template.submittedCategory) {
+          template.submittedCategory = previous ?? template.category;
+        }
+
+        if (previous && next) {
+          template.category = next;
+          template.correctCategory = null;
+          this.logger.log(
+            `Template ${templateName} recategorized ${previous} → ${next}`,
+          );
+        } else if (correct && next && correct !== next) {
+          template.category = next;
+          template.correctCategory = correct;
+          this.logger.log(
+            `Template ${templateName} will recategorize ${next} → ${correct}`,
+          );
+        } else if (next) {
+          template.category = next;
+          template.correctCategory =
+            correct && correct !== next ? correct : null;
+        } else {
+          this.logger.debug(
+            `template_category_update acknowledged without category fields name=${templateName}`,
+          );
+          continue;
+        }
+
+        await this.templates.save(template);
+      }
+    }
+  }
+
+  private async findLocalTemplate(
+    workspaceId: string,
+    keys: {
+      name: string;
+      language?: string;
+      metaTemplateId?: unknown;
+    },
+  ): Promise<WaTemplate | null> {
+    const metaId =
+      keys.metaTemplateId === undefined || keys.metaTemplateId === null
+        ? null
+        : String(keys.metaTemplateId);
+    if (metaId) {
+      const byMetaId = await this.templates.findOne({
+        where: { workspaceId, metaTemplateId: metaId },
+      });
+      if (byMetaId) return byMetaId;
+    }
+
+    const language = keys.language
+      ? normalizeTemplateLanguage(keys.language)
+      : undefined;
+    if (language) {
+      const byLang = await this.templates.findOne({
+        where: { workspaceId, name: keys.name, language },
+      });
+      if (byLang) return byLang;
+    }
+
+    return this.templates.findOne({
+      where: { workspaceId, name: keys.name },
+    });
   }
 
   private async resolveWorkspaceId(

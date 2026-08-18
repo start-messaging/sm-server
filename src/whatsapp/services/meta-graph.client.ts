@@ -134,7 +134,7 @@ export class MetaGraphClient {
     wabaId: string,
     accessToken: string,
   ): Promise<MetaTemplate[]> {
-    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/message_templates?fields=id,name,language,category,status,components,rejected_reason&limit=250`;
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/message_templates?fields=id,name,language,category,correct_category,status,components,rejected_reason&limit=250`;
     const res = await this.get<{ data: MetaTemplate[] }>(url, accessToken);
     return res.data ?? [];
   }
@@ -273,6 +273,8 @@ export interface MetaTemplate {
   name: string;
   language: string;
   category: string;
+  /** Present when Meta will recategorize (or has already aligned). */
+  correct_category?: string | null;
   status: string;
   components?: unknown[];
   rejected_reason?: string;

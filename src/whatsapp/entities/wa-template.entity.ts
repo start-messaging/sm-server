@@ -50,8 +50,20 @@ export class WaTemplate extends BaseEntity {
   @Column({ type: 'varchar', length: 10 })
   language!: string;
 
+  /** Current Meta category (source of truth after sync / category webhooks). */
   @Column({ type: 'varchar', length: 20 })
   category!: TemplateCategory;
+
+  /** Category we submitted at create time. Used to detect Meta recategorization. */
+  @Column({ name: 'submitted_category', type: 'varchar', length: 20, nullable: true })
+  submittedCategory!: TemplateCategory | null;
+
+  /**
+   * Impending Meta category when `correct_category` ≠ `category`.
+   * Null when the live category already matches Meta's correction.
+   */
+  @Column({ name: 'correct_category', type: 'varchar', length: 20, nullable: true })
+  correctCategory!: TemplateCategory | null;
 
   @Column({ type: 'varchar', length: 20, default: 'PENDING' })
   status!: TemplateStatus;
