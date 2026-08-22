@@ -214,7 +214,11 @@ function isMetaTemplateMissing(err: unknown): boolean {
   const payload =
     typeof details === 'object' && details !== null
       ? (details as {
-          details?: { error_subcode?: number; message?: string; error_user_msg?: string };
+          details?: {
+            error_subcode?: number;
+            message?: string;
+            error_user_msg?: string;
+          };
           message?: string;
         })
       : null;

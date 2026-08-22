@@ -239,7 +239,11 @@ export class WhatsappConnectService {
     pin: string,
   ): Promise<{ registered: true; displayNumber: string }> {
     const waba = await this.wabaAccounts.findOne({
-      where: { workspaceId, serviceKey: SERVICE_KEY, status: WabaAccountStatus.ACTIVE },
+      where: {
+        workspaceId,
+        serviceKey: SERVICE_KEY,
+        status: WabaAccountStatus.ACTIVE,
+      },
     });
     if (!waba) {
       throw new AppException(

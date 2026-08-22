@@ -1,4 +1,7 @@
-import type { TemplateCategory, TemplateComponent } from '../../whatsapp/entities/wa-template.entity';
+import type {
+  TemplateCategory,
+  TemplateComponent,
+} from '../../whatsapp/entities/wa-template.entity';
 import type { TemplateExampleStatus } from '../../whatsapp/entities/wa-template-example.entity';
 
 /**
@@ -51,7 +54,8 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
       },
     ],
     useWhen: 'Ecommerce order status (confirmed, shipped, delivered).',
-    metaTip: 'Utility must match a user-requested update. Don’t add discounts here.',
+    metaTip:
+      'Utility must match a user-requested update. Don’t add discounts here.',
     sortOrder: 20,
     status: 'published',
   },
@@ -66,8 +70,10 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
         text: 'Hi {{1}}, reminder: your appointment is on {{2}} at {{3}}. Reply YES to confirm or call us to reschedule.',
       },
     ],
-    useWhen: 'Clinics, salons, service bookings — reminder of an existing appointment.',
-    metaTip: 'Must refer to an appointment the customer already has; avoid sales pitches.',
+    useWhen:
+      'Clinics, salons, service bookings — reminder of an existing appointment.',
+    metaTip:
+      'Must refer to an appointment the customer already has; avoid sales pitches.',
     sortOrder: 30,
     status: 'published',
   },
@@ -83,7 +89,8 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
       },
     ],
     useWhen: 'Invoice / dues reminder the customer already owes.',
-    metaTip: 'Don’t bundle unrelated offers — that often gets categorized as Marketing.',
+    metaTip:
+      'Don’t bundle unrelated offers — that often gets categorized as Marketing.',
     sortOrder: 40,
     status: 'published',
   },
@@ -124,7 +131,8 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
       },
     ],
     useWhen: 'Sales, discounts, seasonal campaigns to opted-in customers.',
-    metaTip: 'Always include clear opt-out. Marketing is reviewed more strictly than Utility.',
+    metaTip:
+      'Always include clear opt-out. Marketing is reviewed more strictly than Utility.',
     sortOrder: 60,
     status: 'published',
   },
@@ -140,7 +148,8 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
       },
     ],
     useWhen: 'Product launch or catalogue “what’s new” blasts.',
-    metaTip: 'Recipients must have opted in to marketing. Avoid misleading urgency.',
+    metaTip:
+      'Recipients must have opted in to marketing. Avoid misleading urgency.',
     sortOrder: 70,
     status: 'published',
   },

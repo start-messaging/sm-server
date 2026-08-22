@@ -65,4 +65,11 @@ export class WorkspaceMember extends BaseEntity {
 
   @Column({ name: 'joined_at', type: 'timestamptz', nullable: true })
   joinedAt!: Date | null;
+
+  /**
+   * Whether this member is eligible to receive round-robin assignments.
+   * Agents can toggle themselves unavailable (e.g. end of shift).
+   */
+  @Column({ name: 'inbox_available', type: 'boolean', default: true })
+  inboxAvailable!: boolean;
 }

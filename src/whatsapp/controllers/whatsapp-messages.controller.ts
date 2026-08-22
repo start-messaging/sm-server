@@ -1,16 +1,40 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AppException } from '../../common/exceptions/app.exception';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
+import { MinRole } from '../../workspaces/decorators/min-role.decorator';
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
 import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.guard';
-import { WhatsappMessagesService } from '../services/whatsapp-messages.service';
+import { WorkspaceRole } from '../../workspaces/entities/workspace-member.entity';
+import {
+  WhatsappMessagesService,
+  ConversationTab,
+} from '../services/whatsapp-messages.service';
 import {
   WhatsappSendService,
   SendMessageInput,
 } from '../services/whatsapp-send.service';
 import { SendMessageDto } from '../dto/send-message.dto';
 import { CreateConversationDto } from '../dto/create-conversation.dto';
+import { PatchConversationDto } from '../dto/patch-conversation.dto';
+import { WA_ERR } from '../whatsapp-error-codes';
+
+/** 100 MB absolute upload cap on our side (Meta per-type limits enforced in service). */
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 @ApiTags('whatsapp-messages')
 @Controller({ path: 'workspaces/:slug/whatsapp/conversations', version: '1' })
@@ -23,6 +47,7 @@ export class WhatsappMessagesController {
   ) {}
 
   @Post()
+  @MinRole(WorkspaceRole.AGENT)
   @ApiOperation({ summary: 'Create or get conversation by phone number' })
   createOrGetConversation(
     @Param('slug') _slug: string,
@@ -41,8 +66,15 @@ export class WhatsappMessagesController {
   listConversations(
     @Param('slug') _slug: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
+    @Query('tab') tab?: string,
   ) {
-    return this.messagesService.listConversations(ctx.workspace.id);
+    const validTab: ConversationTab =
+      tab === 'all' || tab === 'active' || tab === 'mine' ? tab : 'all';
+    return this.messagesService.listConversations(
+      ctx.workspace.id,
+      ctx.membership,
+      validTab,
+    );
   }
 
   @Get(':conversationId/messages')
@@ -52,10 +84,15 @@ export class WhatsappMessagesController {
     @Param('conversationId') conversationId: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
   ) {
-    return this.messagesService.listMessages(ctx.workspace.id, conversationId);
+    return this.messagesService.listMessages(
+      ctx.workspace.id,
+      conversationId,
+      ctx.membership,
+    );
   }
 
   @Post(':conversationId/messages')
+  @MinRole(WorkspaceRole.AGENT)
   @ApiOperation({ summary: 'Send a message (text or template)' })
   sendMessage(
     @Param('slug') _slug: string,
@@ -69,4 +106,84 @@ export class WhatsappMessagesController {
       dto as SendMessageInput,
     );
   }
+
+  @Post(':conversationId/media')
+  @MinRole(WorkspaceRole.AGENT)
+  @ApiOperation({
+    summary: 'Upload and send a media message (image / audio / video / document)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_UPLOAD_BYTES },
+    }),
+  )
+  sendMedia(
+    @Param('slug') _slug: string,
+    @Param('conversationId') conversationId: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('caption') caption?: string,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new AppException(
+        { code: 'VALIDATION_ERROR', message: 'No file uploaded' },
+        400,
+      );
+    }
+    const mimeType =
+      file.mimetype ?? 'application/octet-stream';
+    const mediaType = resolveMediaTypeFromMime(mimeType);
+    if (!isAllowedOutboundMediaType(mediaType)) {
+      throw new AppException(
+        {
+          code: WA_ERR.MEDIA_TYPE_UNSUPPORTED,
+          message: `Unsupported media type: ${mimeType}. Send image, audio, video, or document.`,
+        },
+        400,
+      );
+    }
+    return this.sendService.send(ctx.workspace.id, conversationId, {
+      type: mediaType as 'image' | 'audio' | 'video' | 'document',
+      buffer: file.buffer,
+      mimeType,
+      filename: file.originalname ?? 'upload',
+      caption: caption?.trim() || undefined,
+    } satisfies SendMessageInput);
+  }
+
+  @Patch(':conversationId')
+  @ApiOperation({
+    summary: 'Patch conversation (assign/claim/resolve/mark-read)',
+  })
+  patchConversation(
+    @Param('slug') _slug: string,
+    @Param('conversationId') conversationId: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @Body() dto: PatchConversationDto,
+  ) {
+    return this.messagesService.patchConversation(
+      ctx.workspace.id,
+      conversationId,
+      ctx.membership,
+      dto,
+    );
+  }
+}
+
+function resolveMediaTypeFromMime(
+  mime: string,
+): 'image' | 'audio' | 'video' | 'document' | 'sticker' {
+  const lower = mime.toLowerCase();
+  if (lower.startsWith('image/')) return 'image';
+  if (lower.startsWith('audio/')) return 'audio';
+  if (lower.startsWith('video/')) return 'video';
+  return 'document';
+}
+
+function isAllowedOutboundMediaType(
+  t: string,
+): t is 'image' | 'audio' | 'video' | 'document' {
+  return t === 'image' || t === 'audio' || t === 'video' || t === 'document';
 }

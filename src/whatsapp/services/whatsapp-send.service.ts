@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppException } from '../../common/exceptions/app.exception';
+import { isCustomerCareWindowOpen } from '../../common/phone/normalize-wa-e164';
 import { decryptToken } from '../crypto/token-encryption';
 import { WabaAccount } from '../entities/waba-account.entity';
 import {
@@ -10,10 +11,18 @@ import {
 } from '../entities/phone-number.entity';
 import { WaConversation } from '../entities/wa-conversation.entity';
 import { WaMessage } from '../entities/wa-message.entity';
+import type { MessageMediaType } from '../entities/wa-message.entity';
 import { WaTemplate } from '../entities/wa-template.entity';
 import { WA_ERR } from '../whatsapp-error-codes';
 import { InboxRealtimeService } from '../realtime/inbox-realtime.service';
-import { MetaGraphClient, MetaSendMessageInput } from './meta-graph.client';
+import {
+  MetaGraphClient,
+  MetaSendMessageInput,
+  type MetaMediaMessageType,
+} from './meta-graph.client';
+import {
+  WhatsappMediaService,
+} from './whatsapp-media.service';
 
 export interface SendTextInput {
   type: 'text';
@@ -27,7 +36,20 @@ export interface SendTemplateInput {
   parameters?: Record<string, string>[];
 }
 
-export type SendMessageInput = SendTextInput | SendTemplateInput;
+export interface SendMediaInput {
+  type: 'image' | 'audio' | 'video' | 'document';
+  /** Raw file buffer from the multipart upload. */
+  buffer: Buffer;
+  mimeType: string;
+  filename: string;
+  /** Optional caption (image, video, document only — Meta ignores for audio). */
+  caption?: string;
+}
+
+export type SendMessageInput =
+  | SendTextInput
+  | SendTemplateInput
+  | SendMediaInput;
 
 /**
  * Orchestrates WhatsApp message sending.
@@ -41,6 +63,7 @@ export class WhatsappSendService {
 
   constructor(
     private readonly meta: MetaGraphClient,
+    private readonly mediaService: WhatsappMediaService,
     @InjectRepository(WabaAccount)
     private readonly wabaAccounts: Repository<WabaAccount>,
     @InjectRepository(PhoneNumber)
@@ -66,6 +89,19 @@ export class WhatsappSendService {
       conversationId,
     );
 
+    if (input.type === 'text' || input.type === 'image' || input.type === 'audio' || input.type === 'video' || input.type === 'document') {
+      if (!isCustomerCareWindowOpen(conversation.lastInboundAt)) {
+        throw new AppException(
+          {
+            code: WA_ERR.MESSAGE_WINDOW_CLOSED,
+            message:
+              '24-hour customer-care window has closed. Use an approved template to re-open the conversation.',
+          },
+          403,
+        );
+      }
+    }
+
     let templateBody: string | null = null;
     if (input.type === 'template') {
       const template = await this.requireApprovedTemplate(
@@ -78,7 +114,38 @@ export class WhatsappSendService {
 
     const token = decryptToken(waba.accessTokenEncrypted);
 
-    const metaBody = this.buildMetaPayload(conversation.contactPhone, input);
+    // ── Media: upload to R2 + Meta, then build the send payload ──────────────
+    let mediaUploadMeta: {
+      mediaType: MessageMediaType;
+      metaMediaId: string;
+      r2Key: string;
+      mediaUrl: string | null;
+      mediaMime: string;
+      mediaFilename: string;
+    } | null = null;
+
+    if (
+      input.type === 'image' ||
+      input.type === 'audio' ||
+      input.type === 'video' ||
+      input.type === 'document'
+    ) {
+      mediaUploadMeta = await this.mediaService.uploadForSend({
+        workspaceId,
+        conversationId,
+        phoneNumberId: phone.metaPhoneNumberId,
+        accessToken: token,
+        buffer: input.buffer,
+        mimeType: input.mimeType,
+        filename: input.filename,
+      });
+    }
+
+    const metaBody = this.buildMetaPayload(
+      conversation.contactPhone,
+      input,
+      mediaUploadMeta?.metaMediaId,
+    );
 
     let metaMessageId: string;
     try {
@@ -98,16 +165,40 @@ export class WhatsappSendService {
       conversationId,
       direction: 'outbound',
       status: 'sent',
-      body: input.type === 'text' ? input.text : templateBody,
+      body:
+        input.type === 'text'
+          ? input.text
+          : input.type === 'template'
+            ? templateBody
+            : (input.caption ?? null),
       templateName: input.type === 'template' ? input.templateName : null,
       timestamp: new Date(),
       metaMessageId,
+      ...(mediaUploadMeta
+        ? {
+            mediaType: mediaUploadMeta.mediaType,
+            mediaR2Key: mediaUploadMeta.r2Key,
+            mediaUrl: mediaUploadMeta.mediaUrl,
+            mediaMime: mediaUploadMeta.mediaMime,
+            mediaFilename: mediaUploadMeta.mediaFilename,
+          }
+        : {
+            mediaType: null,
+            mediaR2Key: null,
+            mediaUrl: null,
+            mediaMime: null,
+            mediaFilename: null,
+          }),
     });
     await this.messages.save(message);
 
     conversation.lastMessageBody =
       message.body ??
-      (message.templateName ? `[Template: ${message.templateName}]` : null);
+      (message.mediaType
+        ? `[${message.mediaType}]`
+        : message.templateName
+          ? `[Template: ${message.templateName}]`
+          : null);
     conversation.lastMessageAt = message.timestamp;
     await this.conversations.save(conversation);
 
@@ -123,30 +214,67 @@ export class WhatsappSendService {
   private buildMetaPayload(
     to: string,
     input: SendMessageInput,
+    metaMediaId?: string,
   ): MetaSendMessageInput {
     const phone = to.replace(/^\+/, '');
+
     if (input.type === 'text') {
       return { to: phone, type: 'text', text: { body: input.text } };
     }
-    return {
-      to: phone,
-      type: 'template',
-      template: {
-        name: input.templateName,
-        language: { code: input.templateLanguage },
-        components: input.parameters?.length
-          ? [
-              {
-                type: 'body',
-                parameters: input.parameters.map((p) => ({
-                  type: 'text' as const,
-                  text: p['text'] ?? Object.values(p)[0] ?? '',
-                })),
-              },
-            ]
-          : undefined,
-      },
-    };
+
+    if (input.type === 'template') {
+      return {
+        to: phone,
+        type: 'template',
+        template: {
+          name: input.templateName,
+          language: { code: input.templateLanguage },
+          components: input.parameters?.length
+            ? [
+                {
+                  type: 'body',
+                  parameters: input.parameters.map((p) => ({
+                    type: 'text' as const,
+                    text: p['text'] ?? Object.values(p)[0] ?? '',
+                  })),
+                },
+              ]
+            : undefined,
+        },
+      };
+    }
+
+    // Media types: image | audio | video | document
+    const id = metaMediaId ?? '';
+    const caption = (input as SendMediaInput).caption;
+    const filename = (input as SendMediaInput).filename;
+
+    switch (input.type as MetaMediaMessageType) {
+      case 'image':
+        return {
+          to: phone,
+          type: 'image',
+          image: { id, ...(caption ? { caption } : {}) },
+        };
+      case 'audio':
+        return { to: phone, type: 'audio', audio: { id } };
+      case 'video':
+        return {
+          to: phone,
+          type: 'video',
+          video: { id, ...(caption ? { caption } : {}) },
+        };
+      case 'document':
+        return {
+          to: phone,
+          type: 'document',
+          document: {
+            id,
+            ...(caption ? { caption } : {}),
+            ...(filename ? { filename } : {}),
+          },
+        };
+    }
   }
 
   private async requireApprovedTemplate(
@@ -202,13 +330,15 @@ export class WhatsappSendService {
   private mapMetaSendError(err: unknown): never {
     if (err instanceof AppException) {
       const details = (err.getResponse() as Record<string, unknown>)
-        ?.details as {
-        code?: number;
-        error_subcode?: number;
-        error_data?: { details?: string };
-        error_user_msg?: string;
-        message?: string;
-      } | undefined;
+        ?.details as
+        | {
+            code?: number;
+            error_subcode?: number;
+            error_data?: { details?: string };
+            error_user_msg?: string;
+            message?: string;
+          }
+        | undefined;
       const subcode = details?.error_subcode;
       const code = details?.code;
       const detailMsg =
@@ -238,8 +368,7 @@ export class WhatsappSendService {
         throw new AppException(
           {
             code: WA_ERR.META_BILLING_ERROR,
-            message:
-              detailMsg ?? 'Meta billing error — payment declined.',
+            message: detailMsg ?? 'Meta billing error — payment declined.',
             details,
           },
           402,
@@ -262,8 +391,7 @@ export class WhatsappSendService {
           {
             code: WA_ERR.PHONE_DAILY_LIMIT_REACHED,
             message:
-              detailMsg ??
-              'WhatsApp messaging limit reached. Try again later.',
+              detailMsg ?? 'WhatsApp messaging limit reached. Try again later.',
             details,
           },
           429,
@@ -273,7 +401,8 @@ export class WhatsappSendService {
       if (detailMsg) {
         throw new AppException(
           {
-            code: (err.getResponse() as { code?: string })?.code ??
+            code:
+              (err.getResponse() as { code?: string })?.code ??
               WA_ERR.WABA_CONNECT_FAILED,
             message: detailMsg,
             details,
@@ -341,6 +470,10 @@ export class WhatsappSendService {
       templateName: m.templateName,
       failureCode: m.failureCode,
       failureReason: m.failureReason,
+      mediaType: m.mediaType ?? null,
+      mediaUrl: m.mediaUrl ?? null,
+      mediaMime: m.mediaMime ?? null,
+      mediaFilename: m.mediaFilename ?? null,
     };
   }
 }

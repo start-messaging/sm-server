@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job } from 'bullmq';
 import { Repository } from 'typeorm';
+import { decryptToken } from '../crypto/token-encryption';
 import {
   WaWebhookEvent,
   WaWebhookEventStatus,
@@ -11,6 +12,8 @@ import {
 import { WaConversation } from '../entities/wa-conversation.entity';
 import { WaMessage, MessageStatus } from '../entities/wa-message.entity';
 import { WaTemplate } from '../entities/wa-template.entity';
+import { WaContact } from '../entities/wa-contact.entity';
+import { WaInboxSettings } from '../entities/wa-inbox-settings.entity';
 import {
   WabaAccount,
   WabaAccountStatus,
@@ -36,7 +39,17 @@ import {
   normalizeTemplateLanguage,
   parseTemplateCategory,
 } from '../utils/template-category';
+import { normalizeWaE164 } from '../../common/phone/normalize-wa-e164';
 import { WA_WEBHOOK_QUEUE } from './wa-webhook.constants';
+import {
+  WorkspaceMember,
+  MemberStatus,
+  WorkspaceRole,
+} from '../../workspaces/entities/workspace-member.entity';
+import {
+  WaAssignmentEvent,
+} from '../entities/wa-assignment-event.entity';
+import { WhatsappMediaService, resolveMediaType } from '../services/whatsapp-media.service';
 
 export interface WaWebhookJobData {
   eventId: string;
@@ -55,11 +68,20 @@ export class WaWebhookProcessor extends WorkerHost {
     private readonly messages: Repository<WaMessage>,
     @InjectRepository(WaTemplate)
     private readonly templates: Repository<WaTemplate>,
+    @InjectRepository(WaContact)
+    private readonly contacts: Repository<WaContact>,
+    @InjectRepository(WaInboxSettings)
+    private readonly inboxSettings: Repository<WaInboxSettings>,
     @InjectRepository(WabaAccount)
     private readonly wabaAccounts: Repository<WabaAccount>,
     @InjectRepository(PhoneNumber)
     private readonly phoneNumbers: Repository<PhoneNumber>,
+    @InjectRepository(WorkspaceMember)
+    private readonly members: Repository<WorkspaceMember>,
+    @InjectRepository(WaAssignmentEvent)
+    private readonly assignmentEvents: Repository<WaAssignmentEvent>,
     private readonly inboxRealtime: InboxRealtimeService,
+    private readonly mediaService: WhatsappMediaService,
   ) {
     super();
   }
@@ -240,7 +262,7 @@ export class WaWebhookProcessor extends WorkerHost {
         const value = change.value ?? {};
         const metaMessages =
           (value['messages'] as Array<Record<string, unknown>>) ?? [];
-        const contacts =
+        const metaContacts =
           (value['contacts'] as Array<Record<string, string>>) ?? [];
 
         if (!metaMessages.length) continue;
@@ -249,9 +271,19 @@ export class WaWebhookProcessor extends WorkerHost {
         if (!workspaceId) continue;
 
         for (const msg of metaMessages) {
-          const from = msg['from'] as string;
-          const contactName = contacts[0]
-            ? ((contacts[0] as unknown as { profile?: { name?: string } })
+          const rawFrom = msg['from'] as string;
+          let contactPhone: string;
+          try {
+            contactPhone = normalizeWaE164(rawFrom);
+          } catch {
+            this.logger.warn(
+              `inbound: could not normalize phone "${rawFrom}" — using raw`,
+            );
+            contactPhone = rawFrom;
+          }
+
+          const contactName = metaContacts[0]
+            ? ((metaContacts[0] as unknown as { profile?: { name?: string } })
                 ?.profile?.name ?? null)
             : null;
           const wamid = msg['id'] as string;
@@ -261,18 +293,28 @@ export class WaWebhookProcessor extends WorkerHost {
           const ts = msg['timestamp'] as string;
           const timestamp = ts ? new Date(parseInt(ts, 10) * 1000) : new Date();
 
-          let conversation = await this.conversations.findOne({
-            where: { workspaceId, contactPhone: from },
-          });
+          const contact = await this.upsertInboundContact(
+            workspaceId,
+            contactPhone,
+            contactName,
+          );
+
+          let conversation = await this.findConversationForInbound(
+            workspaceId,
+            contactPhone,
+            rawFrom,
+          );
           if (!conversation) {
             conversation = this.conversations.create({
               workspaceId,
-              contactPhone: from,
+              contactPhone,
               contactName: contactName,
+              contactId: contact.id,
               lastInboundAt: timestamp,
               unreadCount: 1,
               lastMessageBody: textBody,
               lastMessageAt: timestamp,
+              status: 'open',
             });
             await this.conversations.save(conversation);
           } else {
@@ -280,14 +322,29 @@ export class WaWebhookProcessor extends WorkerHost {
             conversation.unreadCount += 1;
             conversation.lastMessageBody = textBody;
             conversation.lastMessageAt = timestamp;
+            if (!conversation.contactId) conversation.contactId = contact.id;
             if (contactName) conversation.contactName = contactName;
+            if (conversation.status === 'resolved') {
+              conversation.status = 'open';
+              conversation.resolvedAt = null;
+              conversation.resolvedByUserId = null;
+            }
             await this.conversations.save(conversation);
           }
+
+          await this.maybeAutoAssign(workspaceId, conversation);
 
           const existing = await this.messages.findOne({
             where: { metaMessageId: wamid },
           });
           if (!existing) {
+            const isMediaType =
+              msgType === MetaInboundMessageType.IMAGE ||
+              msgType === MetaInboundMessageType.AUDIO ||
+              msgType === MetaInboundMessageType.VIDEO ||
+              msgType === MetaInboundMessageType.DOCUMENT ||
+              msgType === MetaInboundMessageType.STICKER;
+
             const message = this.messages.create({
               workspaceId,
               conversationId: conversation.id,
@@ -297,8 +354,30 @@ export class WaWebhookProcessor extends WorkerHost {
               timestamp,
               metaMessageId: wamid,
               templateName: null,
+              mediaType: isMediaType
+                ? (msgType as 'image' | 'audio' | 'video' | 'document' | 'sticker')
+                : null,
+              mediaR2Key: null,
+              mediaUrl: null,
+              mediaMime: null,
+              mediaFilename: null,
             });
             await this.messages.save(message);
+
+            // Async media download — do NOT await in the main flow so the
+            // webhook 200 is never delayed. We update the row after saving.
+            if (isMediaType) {
+              void this.downloadInboundMedia(
+                msg,
+                msgType,
+                workspaceId,
+                conversation.id,
+                wamid,
+                event.wabaAccountId,
+                message.id,
+              );
+            }
+
             await this.inboxRealtime.publishInboxUpdated(
               workspaceId,
               conversation.id,
@@ -312,6 +391,223 @@ export class WaWebhookProcessor extends WorkerHost {
         }
       }
     }
+  }
+
+  /**
+   * Fetches inbound media from Meta CDN and uploads to R2 in the background.
+   * Updates the WaMessage row on success; logs and keeps placeholder on failure.
+   * Called with `void` — must never propagate exceptions to the job processor.
+   */
+  private async downloadInboundMedia(
+    msg: Record<string, unknown>,
+    msgType: string,
+    workspaceId: string,
+    conversationId: string,
+    wamid: string,
+    wabaAccountId: string | null,
+    messageId: string,
+  ): Promise<void> {
+    try {
+      const mediaObj = msg[msgType] as
+        | Record<string, string>
+        | undefined;
+      const mediaId = mediaObj?.['id'];
+      if (!mediaId) {
+        this.logger.warn(
+          `inbound media: no id in ${msgType} object for wamid=${wamid}`,
+        );
+        return;
+      }
+
+      // Resolve WABA access token.
+      if (!wabaAccountId) return;
+      const waba = await this.wabaAccounts.findOne({
+        where: { id: wabaAccountId },
+      });
+      if (!waba?.accessTokenEncrypted) return;
+      const accessToken = decryptToken(waba.accessTokenEncrypted);
+
+      const fallbackMime = mediaObj['mime_type'] ?? undefined;
+      const fallbackFilename = mediaObj['filename'] ?? undefined;
+
+      const result = await this.mediaService.downloadAndStore({
+        workspaceId,
+        conversationId,
+        wamid,
+        mediaId,
+        accessToken,
+        fallbackMime,
+        fallbackFilename,
+      });
+
+      if (result) {
+        const mediaType = resolveMediaType(result.mediaMime);
+        await this.messages.update(messageId, {
+          mediaR2Key: result.r2Key,
+          mediaUrl: result.mediaUrl,
+          mediaMime: result.mediaMime,
+          mediaType,
+          ...(fallbackFilename ? { mediaFilename: fallbackFilename } : {}),
+        });
+        this.logger.debug(
+          `inbound media stored: wamid=${wamid} r2Key=${result.r2Key}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `downloadInboundMedia failed for wamid=${wamid}: ${String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Resolve an inbound conversation by E.164 or the raw Meta `from` digits
+   * (pre-Slice 1 rows). Migrates the stored phone to E.164 when we find a
+   * legacy row — the E.164 lookup already missed, so this rename is unique.
+   */
+  private async findConversationForInbound(
+    workspaceId: string,
+    e164: string,
+    rawFrom: string,
+  ): Promise<WaConversation | null> {
+    const byE164 = await this.conversations.findOne({
+      where: { workspaceId, contactPhone: e164 },
+    });
+    if (byE164) return byE164;
+
+    const candidates = new Set<string>();
+    if (rawFrom && rawFrom !== e164) candidates.add(rawFrom);
+    const digits = e164.replace(/^\+/, '');
+    if (digits !== e164) candidates.add(digits);
+
+    for (const phone of candidates) {
+      const found = await this.conversations.findOne({
+        where: { workspaceId, contactPhone: phone },
+      });
+      if (found) {
+        found.contactPhone = e164;
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private async upsertInboundContact(
+    workspaceId: string,
+    phoneE164: string,
+    name: string | null,
+  ): Promise<WaContact> {
+    let contact = await this.contacts.findOne({
+      where: { workspaceId, phoneE164 },
+    });
+    if (!contact) {
+      const digits = phoneE164.replace(/^\+/, '');
+      if (digits !== phoneE164) {
+        contact = await this.contacts.findOne({
+          where: { workspaceId, phoneE164: digits },
+        });
+        if (contact) {
+          contact.phoneE164 = phoneE164;
+          if (name && !contact.name) contact.name = name;
+          await this.contacts.save(contact);
+          return contact;
+        }
+      }
+      contact = this.contacts.create({
+        workspaceId,
+        phoneE164,
+        name: name ?? null,
+        source: 'whatsapp',
+        optedIn: true,
+        tags: [],
+        attributes: {},
+      });
+      await this.contacts.save(contact);
+    } else if (name && !contact.name) {
+      contact.name = name;
+      await this.contacts.save(contact);
+    }
+    return contact;
+  }
+
+  /**
+   * Round-robin auto-assign: picks the next eligible member after
+   * `lastRoutedUserId` in a stable order (joinedAt ASC, userId ASC) and
+   * assigns the conversation, writing an audit event and firing SSE.
+   *
+   * Eligible: ACTIVE members with role AGENT or MANAGER whose `inboxAvailable`
+   * flag is true. Skips if the conversation is already assigned.
+   */
+  private async maybeAutoAssign(
+    workspaceId: string,
+    conversation: WaConversation,
+  ): Promise<void> {
+    if (conversation.assignedToUserId !== null) return;
+
+    const settings = await this.inboxSettings.findOne({
+      where: { workspaceId },
+    });
+    if (!settings || !settings.roundRobinEnabled) return;
+
+    const eligible = await this.members
+      .createQueryBuilder('m')
+      .where('m.workspace_id = :workspaceId', { workspaceId })
+      .andWhere('m.status = :status', { status: MemberStatus.ACTIVE })
+      .andWhere('m.role IN (:...roles)', {
+        roles: [WorkspaceRole.AGENT, WorkspaceRole.MANAGER],
+      })
+      .andWhere('m.inbox_available = true')
+      .orderBy('COALESCE(m.joined_at, m.created_at)', 'ASC')
+      .addOrderBy('m.user_id', 'ASC')
+      .getMany();
+
+    if (eligible.length === 0) {
+      this.logger.debug(
+        `round-robin: no eligible members for workspace ${workspaceId}`,
+      );
+      return;
+    }
+
+    // Find position of the last routed user, then advance by 1 (wrap around).
+    const lastIdx = settings.lastRoutedUserId
+      ? eligible.findIndex((m) => m.userId === settings.lastRoutedUserId)
+      : -1;
+    const nextIdx = (lastIdx + 1) % eligible.length;
+    const picked = eligible[nextIdx];
+    if (!picked) return; // should never happen (length > 0), but satisfies TS
+
+    conversation.assignedToUserId = picked.userId;
+    await this.conversations.save(conversation);
+
+    if (conversation.contactId) {
+      await this.contacts.update(conversation.contactId, {
+        assignedToUserId: picked.userId,
+      });
+    }
+
+    const evt = this.assignmentEvents.create({
+      workspaceId,
+      conversationId: conversation.id,
+      actorUserId: null,
+      actorType: 'workspace_member',
+      action: 'ASSIGN',
+      fromUserId: null,
+      toUserId: picked.userId,
+    });
+    await this.assignmentEvents.save(evt);
+
+    settings.lastRoutedUserId = picked.userId;
+    await this.inboxSettings.save(settings);
+
+    await this.inboxRealtime.publishInboxUpdated(
+      workspaceId,
+      conversation.id,
+      'assignment',
+    );
+
+    this.logger.log(
+      `round-robin: conversation ${conversation.id} → user ${picked.userId}`,
+    );
   }
 
   /** Switch on Meta inbound message type; unknown types still persist a placeholder. */
@@ -452,7 +748,7 @@ export class WaWebhookProcessor extends WorkerHost {
 
             const template = await this.templates.findOne({ where });
             if (template) {
-              template.status = normalized as WaTemplate['status'];
+              template.status = normalized;
               if (reason) template.rejectionReason = reason;
               if (normalized === MetaTemplateStatusEvent.APPROVED) {
                 template.rejectionReason = null;
@@ -987,9 +1283,7 @@ function extractStatusFailure(statusUpdate: Record<string, unknown>): {
   }
   const first = errors[0] as Record<string, unknown>;
   const code = typeof first['code'] === 'number' ? first['code'] : null;
-  const errorData = first['error_data'] as
-    | { details?: string }
-    | undefined;
+  const errorData = first['error_data'] as { details?: string } | undefined;
   const reason =
     (typeof errorData?.details === 'string' && errorData.details) ||
     (typeof first['title'] === 'string' && first['title']) ||

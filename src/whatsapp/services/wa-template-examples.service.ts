@@ -152,4 +152,3 @@ export class WaTemplateExamplesService implements OnModuleInit {
     return example;
   }
 }
-

@@ -4,6 +4,12 @@ import { WaConversation } from './wa-conversation.entity';
 
 export type MessageDirection = 'inbound' | 'outbound';
 export type MessageStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+export type MessageMediaType =
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'document'
+  | 'sticker';
 
 @Index('idx_wa_messages_conversation', ['conversationId', 'timestamp'])
 @Index('idx_wa_messages_workspace', ['workspaceId'])
@@ -59,4 +65,39 @@ export class WaMessage extends BaseEntity {
   /** Human-readable failure detail from Meta (title or error_data.details). */
   @Column({ name: 'failure_reason', type: 'text', nullable: true })
   failureReason!: string | null;
+
+  // ── Media fields ────────────────────────────────────────────────────────────
+
+  /** Media type; null for text and template messages. */
+  @Column({
+    name: 'media_type',
+    type: 'varchar',
+    length: 16,
+    nullable: true,
+  })
+  mediaType!: MessageMediaType | null;
+
+  /**
+   * Cloudflare R2 object key (e.g. `wa/{workspaceId}/{conversationId}/{wamid}`).
+   * Public URL = `${R2_PUBLIC_URL}/${mediaR2Key}`.
+   */
+  @Column({ name: 'media_r2_key', type: 'text', nullable: true })
+  mediaR2Key!: string | null;
+
+  /** Full public URL of the media in R2 (set when R2_PUBLIC_URL is configured). */
+  @Column({ name: 'media_url', type: 'text', nullable: true })
+  mediaUrl!: string | null;
+
+  /** MIME type reported by Meta or the uploader (e.g. `image/jpeg`). */
+  @Column({ name: 'media_mime', type: 'varchar', length: 128, nullable: true })
+  mediaMime!: string | null;
+
+  /** Original filename (mainly for document messages). */
+  @Column({
+    name: 'media_filename',
+    type: 'varchar',
+    length: 512,
+    nullable: true,
+  })
+  mediaFilename!: string | null;
 }

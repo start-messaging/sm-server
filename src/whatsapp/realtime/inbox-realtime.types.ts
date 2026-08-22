@@ -1,5 +1,10 @@
 /** Events pushed to open inbox tabs via SSE (Redis pub/sub fan-out). */
-export type InboxRealtimeReason = 'inbound' | 'status' | 'outbound';
+export type InboxRealtimeReason =
+  | 'inbound'
+  | 'status'
+  | 'outbound'
+  | 'assignment'
+  | 'resolved';
 
 export interface InboxUpdatedEvent {
   type: 'inbox.updated';

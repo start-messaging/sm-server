@@ -19,10 +19,13 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
+import { MinRole } from '../../workspaces/decorators/min-role.decorator';
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
 import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.guard';
+import { WorkspaceRole } from '../../workspaces/entities/workspace-member.entity';
 import { WhatsappContactsService } from '../services/whatsapp-contacts.service';
 import { CreateContactDto, UpdateContactDto } from '../dto/contact.dto';
+import { CreateContactNoteDto } from '../dto/contact-note.dto';
 
 @ApiTags('contacts')
 @Controller({ path: 'workspaces/:slug/contacts', version: '1' })
@@ -48,6 +51,16 @@ export class WhatsappContactsController {
     @Body() dto: CreateContactDto,
   ) {
     return this.contactsService.create(ctx.workspace.id, dto);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get one contact' })
+  getById(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.contactsService.getById(ctx.workspace.id, id);
   }
 
   @Patch(':id')
@@ -85,7 +98,6 @@ export class WhatsappContactsController {
       .split(/\r?\n/)
       .map((l: string) => l.trim())
       .filter(Boolean);
-    // Skip header row
     const dataLines = lines.slice(1);
     const rows = dataLines
       .map((line: string) => {
@@ -100,6 +112,33 @@ export class WhatsappContactsController {
       .filter((r: { phoneE164: string }) => r.phoneE164);
 
     return this.contactsService.importCsv(ctx.workspace.id, rows);
+  }
+
+  @Get(':id/notes')
+  @ApiOperation({ summary: 'List notes for a contact' })
+  listNotes(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.contactsService.listNotes(ctx.workspace.id, id);
+  }
+
+  @Post(':id/notes')
+  @MinRole(WorkspaceRole.AGENT)
+  @ApiOperation({ summary: 'Add note to a contact' })
+  createNote(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @Body() dto: CreateContactNoteDto,
+  ) {
+    return this.contactsService.createNote(
+      ctx.workspace.id,
+      id,
+      dto.body,
+      ctx.membership.userId,
+    );
   }
 }
 

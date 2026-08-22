@@ -25,8 +25,7 @@ export function paginate<T>(
   query: { page?: number; pageSize?: number },
 ): Paginated<T> {
   const page = query.page && query.page > 0 ? query.page : 1;
-  const pageSize =
-    query.pageSize && query.pageSize > 0 ? query.pageSize : 20;
+  const pageSize = query.pageSize && query.pageSize > 0 ? query.pageSize : 20;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return {
     items,

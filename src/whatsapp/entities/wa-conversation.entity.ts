@@ -2,11 +2,18 @@ import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { WaContact } from './wa-contact.entity';
 
+export type ConversationStatus = 'open' | 'resolved';
+
 @Index('idx_wa_conversations_workspace', ['workspaceId'])
 @Index('uq_wa_conversations_workspace_phone', ['workspaceId', 'contactPhone'], {
   unique: true,
   where: 'deleted_at IS NULL',
 })
+@Index('idx_wa_conversations_workspace_assigned', [
+  'workspaceId',
+  'assignedToUserId',
+])
+@Index('idx_wa_conversations_workspace_status', ['workspaceId', 'status'])
 @Entity({ name: 'wa_conversations' })
 export class WaConversation extends BaseEntity {
   @Column({ name: 'workspace_id', type: 'uuid' })
@@ -43,4 +50,16 @@ export class WaConversation extends BaseEntity {
 
   @Column({ name: 'last_message_at', type: 'timestamptz', nullable: true })
   lastMessageAt!: Date | null;
+
+  @Column({ name: 'assigned_to_user_id', type: 'uuid', nullable: true })
+  assignedToUserId!: string | null;
+
+  @Column({ type: 'varchar', length: 10, default: 'open' })
+  status!: ConversationStatus;
+
+  @Column({ name: 'resolved_at', type: 'timestamptz', nullable: true })
+  resolvedAt!: Date | null;
+
+  @Column({ name: 'resolved_by_user_id', type: 'uuid', nullable: true })
+  resolvedByUserId!: string | null;
 }

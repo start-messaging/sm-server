@@ -163,6 +163,85 @@ export class MetaGraphClient {
     await this.delete(url, accessToken);
   }
 
+  // ── Media ───────────────────────────────────────────────────────────────
+
+  /**
+   * GET /{mediaId} — retrieve the temporary download URL + metadata for a media
+   * object. The returned `url` is only valid for ~5 minutes (Meta CDN).
+   */
+  async getMediaUrl(
+    mediaId: string,
+    accessToken: string,
+  ): Promise<MetaMediaInfo> {
+    const url = `${GRAPH_BASE}/${this.version}/${mediaId}`;
+    return this.get<MetaMediaInfo>(url, accessToken);
+  }
+
+  /**
+   * Download raw media bytes from Meta's CDN using the URL returned by
+   * `getMediaUrl`. The Bearer token is required — CDN URLs are not public.
+   */
+  async downloadMedia(
+    mediaUrl: string,
+    accessToken: string,
+  ): Promise<{ buffer: Buffer; contentType: string }> {
+    const res = await fetch(mediaUrl, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      this.logger.warn(
+        `Meta media download failed: ${res.status} ${mediaUrl}`,
+      );
+      throw new AppException(
+        {
+          code: WA_ERR.MEDIA_UPLOAD_FAILED,
+          message: `Failed to download media from Meta (${res.status})`,
+        },
+        502,
+      );
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+    return { buffer: Buffer.from(arrayBuffer), contentType };
+  }
+
+  /**
+   * POST /{phoneNumberId}/media — upload a file to Meta and get back a
+   * reusable `id` that can be referenced in `sendMessage`.
+   *
+   * Meta requires multipart/form-data with the fields:
+   *   messaging_product=whatsapp, type=<mime-type>, file=<binary>
+   */
+  async uploadMedia(
+    phoneNumberId: string,
+    buffer: Buffer,
+    mimeType: string,
+    filename: string,
+    accessToken: string,
+  ): Promise<{ id: string }> {
+    const url = `${GRAPH_BASE}/${this.version}/${phoneNumberId}/media`;
+
+    // Use the standard FormData / Blob API available in Node 18+.
+    const formData = new FormData();
+    formData.append('messaging_product', 'whatsapp');
+    formData.append('type', mimeType);
+    formData.append(
+      'file',
+      new Blob([new Uint8Array(buffer)], { type: mimeType }),
+      filename,
+    );
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+
+    const result = await this.parseResponse<{ id: string }>(res, url);
+    return result;
+  }
+
   // ── Messaging ───────────────────────────────────────────────────────────
 
   /** POST /{phoneNumberId}/messages — send text or template message. */
@@ -293,16 +372,43 @@ export interface MetaTemplateCreated {
   category: string;
 }
 
+export type MetaMediaMessageType = 'image' | 'audio' | 'video' | 'document';
+
+export interface MetaMediaObject {
+  id: string;
+  /** Optional caption — supported by image, video, document. */
+  caption?: string;
+  /** Filename hint for document downloads. */
+  filename?: string;
+}
+
 export interface MetaSendMessageInput {
   recipient_type?: string;
   to: string;
-  type: 'text' | 'template';
+  type: 'text' | 'template' | MetaMediaMessageType;
   text?: { body: string };
   template?: {
     name: string;
     language: { code: string };
     components?: unknown[];
   };
+  /** Present when type = 'image'. */
+  image?: MetaMediaObject;
+  /** Present when type = 'audio' (no caption supported by Meta). */
+  audio?: { id: string };
+  /** Present when type = 'video'. */
+  video?: MetaMediaObject;
+  /** Present when type = 'document'. */
+  document?: MetaMediaObject;
+}
+
+export interface MetaMediaInfo {
+  id: string;
+  url: string;
+  mime_type: string;
+  sha256: string;
+  file_size: number;
+  messaging_product: string;
 }
 
 export interface MetaSendMessageResult {

@@ -10,7 +10,12 @@ import { WhatsappCampaignsController } from './controllers/whatsapp-campaigns.co
 import { WhatsappBillingController } from './controllers/whatsapp-billing.controller';
 import { AdminTemplateExamplesController } from './controllers/admin-template-examples.controller';
 import { AdminConnectedWabasController } from './controllers/admin-connected-wabas.controller';
+import { AdminInboxOpsController } from './controllers/admin-inbox-ops.controller';
+import { AdminPipelineStageTemplatesController } from './controllers/admin-pipeline-stage-templates.controller';
 import { WhatsappTemplateExamplesController } from './controllers/whatsapp-template-examples.controller';
+import { WhatsappQuickRepliesController } from './controllers/whatsapp-quick-replies.controller';
+import { WhatsappPipelineStagesController } from './controllers/whatsapp-pipeline-stages.controller';
+import { WhatsappInboxSettingsController } from './controllers/whatsapp-inbox-settings.controller';
 import { WhatsappRealtimeModule } from './realtime/whatsapp-realtime.module';
 import { PhoneNumber } from './entities/phone-number.entity';
 import { WabaAccount } from './entities/waba-account.entity';
@@ -22,6 +27,12 @@ import { WaConversation } from './entities/wa-conversation.entity';
 import { WaMessage } from './entities/wa-message.entity';
 import { WaCampaign } from './entities/wa-campaign.entity';
 import { WaSubscription } from './entities/wa-subscription.entity';
+import { WaContactNote } from './entities/wa-contact-note.entity';
+import { WaQuickReply } from './entities/wa-quick-reply.entity';
+import { WaPipelineStage } from './entities/wa-pipeline-stage.entity';
+import { WaInboxSettings } from './entities/wa-inbox-settings.entity';
+import { WaAssignmentEvent } from './entities/wa-assignment-event.entity';
+import { WaPipelineStageTemplate } from './entities/wa-pipeline-stage-template.entity';
 import { WaWebhookQueueModule } from './queue/wa-webhook-queue.module';
 import { WaCampaignQueueModule } from './queue/wa-campaign-queue.module';
 import { MetaGraphClient } from './services/meta-graph.client';
@@ -35,11 +46,19 @@ import { WhatsappBillingService } from './services/whatsapp-billing.service';
 import { BillingProviderService } from './services/billing-provider.service';
 import { WaTemplateExamplesService } from './services/wa-template-examples.service';
 import { AdminConnectedWabasService } from './services/admin-connected-wabas.service';
+import { AdminInboxOpsService } from './services/admin-inbox-ops.service';
+import { AdminPipelineStageTemplatesService } from './services/admin-pipeline-stage-templates.service';
+import { WhatsappQuickRepliesService } from './services/whatsapp-quick-replies.service';
+import { WhatsappPipelineStagesService } from './services/whatsapp-pipeline-stages.service';
+import { WhatsappInboxSettingsService } from './services/whatsapp-inbox-settings.service';
+import { WhatsappMediaService } from './services/whatsapp-media.service';
+import { R2UploadService } from '../common/services/r2-upload.service';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
 import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity';
 import { WorkspaceMemberGuard } from '../workspaces/guards/workspace-member.guard';
 import { Plan } from '../plans/entities/plan.entity';
+import { User } from '../users/entities/user.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { AdminModule } from '../admin/admin.module';
 
@@ -61,10 +80,17 @@ import { AdminModule } from '../admin/admin.module';
       WaMessage,
       WaCampaign,
       WaSubscription,
+      WaContactNote,
+      WaQuickReply,
+      WaPipelineStage,
+      WaInboxSettings,
+      WaAssignmentEvent,
+      WaPipelineStageTemplate,
       WorkspaceService,
       Workspace,
       WorkspaceMember,
       Plan,
+      User,
     ]),
     WaWebhookQueueModule,
     WaCampaignQueueModule,
@@ -84,6 +110,13 @@ import { AdminModule } from '../admin/admin.module';
     BillingProviderService,
     WaTemplateExamplesService,
     AdminConnectedWabasService,
+    WhatsappQuickRepliesService,
+    WhatsappPipelineStagesService,
+    WhatsappInboxSettingsService,
+    AdminInboxOpsService,
+    AdminPipelineStageTemplatesService,
+    WhatsappMediaService,
+    R2UploadService,
     WorkspaceMemberGuard,
   ],
   controllers: [
@@ -98,6 +131,11 @@ import { AdminModule } from '../admin/admin.module';
     AdminTemplateExamplesController,
     AdminConnectedWabasController,
     WhatsappTemplateExamplesController,
+    WhatsappQuickRepliesController,
+    WhatsappPipelineStagesController,
+    WhatsappInboxSettingsController,
+    AdminInboxOpsController,
+    AdminPipelineStageTemplatesController,
   ],
 })
 export class WhatsappModule {}

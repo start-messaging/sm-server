@@ -74,6 +74,22 @@ export const WA_ERR = {
 
   /** CRM subscription is past-due; feature is soft-locked. */
   SUBSCRIPTION_PAST_DUE: 'SUBSCRIPTION_PAST_DUE',
+
+  // ── Media ────────────────────────────────────────────────────────────────
+  /** File exceeds Meta's per-type size limit. */
+  MEDIA_TOO_LARGE: 'MEDIA_TOO_LARGE',
+
+  /** Media type is not supported for outbound sending. */
+  MEDIA_TYPE_UNSUPPORTED: 'MEDIA_TYPE_UNSUPPORTED',
+
+  /**
+   * R2 storage is not configured; media upload is unavailable.
+   * Client should tell the user to contact their workspace admin.
+   */
+  MEDIA_STORAGE_NOT_CONFIGURED: 'MEDIA_STORAGE_NOT_CONFIGURED',
+
+  /** Meta Graph returned an error while uploading or fetching media. */
+  MEDIA_UPLOAD_FAILED: 'MEDIA_UPLOAD_FAILED',
 } as const;
 
 export type WaErrorCode = (typeof WA_ERR)[keyof typeof WA_ERR];
