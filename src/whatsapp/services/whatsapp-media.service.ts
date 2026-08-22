@@ -20,17 +20,15 @@ import type { MessageMediaType } from '../entities/wa-message.entity';
 
 /** Meta per-type size limits in bytes. */
 const META_SIZE_LIMITS: Record<string, number> = {
-  image: 5 * 1024 * 1024,       // 5 MB
-  audio: 16 * 1024 * 1024,      // 16 MB
-  video: 16 * 1024 * 1024,      // 16 MB
-  document: 100 * 1024 * 1024,  // 100 MB
-  sticker: 500 * 1024,          // 500 KB
+  image: 5 * 1024 * 1024, // 5 MB
+  audio: 16 * 1024 * 1024, // 16 MB
+  video: 16 * 1024 * 1024, // 16 MB
+  document: 100 * 1024 * 1024, // 100 MB
+  sticker: 500 * 1024, // 500 KB
 };
 
 /** Resolve a MessageMediaType from a MIME type string. */
-export function resolveMediaType(
-  mime: string,
-): MessageMediaType {
+export function resolveMediaType(mime: string): MessageMediaType {
   const lower = mime.toLowerCase();
   if (lower.startsWith('image/webp')) return 'sticker';
   if (lower.startsWith('image/')) return 'image';

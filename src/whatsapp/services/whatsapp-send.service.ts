@@ -9,6 +9,7 @@ import {
   PhoneNumber,
   WaPhoneNumberStatus,
 } from '../entities/phone-number.entity';
+import { WaContact } from '../entities/wa-contact.entity';
 import { WaConversation } from '../entities/wa-conversation.entity';
 import { WaMessage } from '../entities/wa-message.entity';
 import type { MessageMediaType } from '../entities/wa-message.entity';
@@ -20,9 +21,7 @@ import {
   MetaSendMessageInput,
   type MetaMediaMessageType,
 } from './meta-graph.client';
-import {
-  WhatsappMediaService,
-} from './whatsapp-media.service';
+import { WhatsappMediaService } from './whatsapp-media.service';
 
 export interface SendTextInput {
   type: 'text';
@@ -74,6 +73,8 @@ export class WhatsappSendService {
     private readonly messages: Repository<WaMessage>,
     @InjectRepository(WaTemplate)
     private readonly templates: Repository<WaTemplate>,
+    @InjectRepository(WaContact)
+    private readonly contacts: Repository<WaContact>,
     private readonly inboxRealtime: InboxRealtimeService,
   ) {}
 
@@ -89,7 +90,31 @@ export class WhatsappSendService {
       conversationId,
     );
 
-    if (input.type === 'text' || input.type === 'image' || input.type === 'audio' || input.type === 'video' || input.type === 'document') {
+    // Block all sends (text + template) when the contact has opted out.
+    if (conversation.contactId) {
+      const contact = await this.contacts.findOne({
+        where: { id: conversation.contactId },
+        select: { id: true, optedIn: true },
+      });
+      if (contact && contact.optedIn === false) {
+        throw new AppException(
+          {
+            code: WA_ERR.CONTACT_OPTED_OUT,
+            message:
+              'This contact has unsubscribed and cannot receive messages. Turn opt-in back on from the contact if they have consented again.',
+          },
+          403,
+        );
+      }
+    }
+
+    if (
+      input.type === 'text' ||
+      input.type === 'image' ||
+      input.type === 'audio' ||
+      input.type === 'video' ||
+      input.type === 'document'
+    ) {
       if (!isCustomerCareWindowOpen(conversation.lastInboundAt)) {
         throw new AppException(
           {
@@ -246,10 +271,10 @@ export class WhatsappSendService {
 
     // Media types: image | audio | video | document
     const id = metaMediaId ?? '';
-    const caption = (input as SendMediaInput).caption;
-    const filename = (input as SendMediaInput).filename;
+    const caption = input.caption;
+    const filename = input.filename;
 
-    switch (input.type as MetaMediaMessageType) {
+    switch (input.type) {
       case 'image':
         return {
           to: phone,

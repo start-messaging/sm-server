@@ -1,4 +1,10 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateCampaignDto {
   @IsString()
@@ -20,6 +26,10 @@ export class CreateCampaignDto {
   @IsOptional()
   @IsString()
   scheduledAt?: string;
+
+  @IsOptional()
+  @IsObject()
+  variableMapping?: Record<string, string>;
 }
 
 export class UpdateCampaignDto {
@@ -43,4 +53,8 @@ export class UpdateCampaignDto {
   @IsOptional()
   @IsString()
   scheduledAt?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  variableMapping?: Record<string, string>;
 }

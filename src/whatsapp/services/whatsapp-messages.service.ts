@@ -18,6 +18,17 @@ import {
 
 export type ConversationTab = 'all' | 'active' | 'mine';
 
+export interface ConversationFilters {
+  /** Only return conversations with unread_count > 0 */
+  unread?: boolean;
+  /** Filter by assigned agent UUID */
+  assigneeUserId?: string;
+  /** open = last_inbound_at within 24 h; closed = null or older */
+  window?: 'open' | 'closed';
+  /** Contact tags jsonb array must contain this string */
+  tag?: string;
+}
+
 @Injectable()
 export class WhatsappMessagesService {
   constructor(
@@ -81,6 +92,7 @@ export class WhatsappMessagesService {
     workspaceId: string,
     membership: WorkspaceMember,
     tab: ConversationTab = 'all',
+    filters: ConversationFilters = {},
   ) {
     const isAgent =
       ROLE_RANK[membership.role] <= ROLE_RANK[WorkspaceRole.AGENT];
@@ -124,6 +136,35 @@ export class WhatsappMessagesService {
         default:
           break;
       }
+    }
+
+    // --- Optional filters (all additive / AND) ---
+
+    if (filters.unread) {
+      qb.andWhere('c.unread_count > 0');
+    }
+
+    if (filters.assigneeUserId) {
+      qb.andWhere('c.assigned_to_user_id = :filterAssignee', {
+        filterAssignee: filters.assigneeUserId,
+      });
+    }
+
+    if (filters.window === 'open') {
+      qb.andWhere(
+        "c.last_inbound_at IS NOT NULL AND c.last_inbound_at > NOW() - INTERVAL '24 hours'",
+      );
+    } else if (filters.window === 'closed') {
+      qb.andWhere(
+        "(c.last_inbound_at IS NULL OR c.last_inbound_at <= NOW() - INTERVAL '24 hours')",
+      );
+    }
+
+    if (filters.tag) {
+      qb.leftJoin(WaContact, 'ct', 'ct.id = c.contact_id');
+      qb.andWhere('ct.tags @> CAST(:tagJson AS jsonb)', {
+        tagJson: JSON.stringify([filters.tag]),
+      });
     }
 
     qb.orderBy('c.last_message_at', 'DESC', 'NULLS LAST');
@@ -225,6 +266,51 @@ export class WhatsappMessagesService {
     }));
 
     return { messages, total };
+  }
+
+  async listAssignmentEvents(
+    workspaceId: string,
+    conversationId: string,
+    membership: WorkspaceMember,
+  ) {
+    const conversation = await this.conversations.findOne({
+      where: { id: conversationId, workspaceId },
+    });
+    if (!conversation) {
+      throw new AppException(
+        { code: 'CONVERSATION_NOT_FOUND', message: 'Conversation not found' },
+        404,
+      );
+    }
+
+    const isAgent =
+      ROLE_RANK[membership.role] <= ROLE_RANK[WorkspaceRole.AGENT];
+    if (
+      isAgent &&
+      conversation.assignedToUserId !== null &&
+      conversation.assignedToUserId !== membership.userId
+    ) {
+      throw new AppException(
+        { code: 'CONVERSATION_NOT_FOUND', message: 'Conversation not found' },
+        404,
+      );
+    }
+
+    const events = await this.assignmentEvents.find({
+      where: { workspaceId, conversationId },
+      order: { createdAt: 'ASC' },
+    });
+
+    return {
+      events: events.map((e) => ({
+        id: e.id,
+        action: e.action,
+        actorUserId: e.actorUserId,
+        fromUserId: e.fromUserId,
+        toUserId: e.toUserId,
+        createdAt: e.createdAt.toISOString(),
+      })),
+    };
   }
 
   async patchConversation(

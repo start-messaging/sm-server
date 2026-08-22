@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { AppException } from '../../common/exceptions/app.exception';
 import { WaCampaign, CampaignStatus } from '../entities/wa-campaign.entity';
 import { WaContact } from '../entities/wa-contact.entity';
@@ -15,6 +15,7 @@ export interface CreateCampaignInput {
   templateLanguage: string;
   audienceIds: string[];
   scheduledAt?: string;
+  variableMapping?: Record<string, string>;
 }
 
 export interface UpdateCampaignInput {
@@ -23,6 +24,7 @@ export interface UpdateCampaignInput {
   templateLanguage?: string;
   audienceIds?: string[];
   scheduledAt?: string | null;
+  variableMapping?: Record<string, string>;
 }
 
 @Injectable()
@@ -58,6 +60,7 @@ export class WhatsappCampaignsService {
       templateName: input.templateName,
       templateLanguage: input.templateLanguage,
       audienceIds: input.audienceIds,
+      variableMapping: input.variableMapping ?? {},
       scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
       status: 'DRAFT' as CampaignStatus,
       stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 },
@@ -91,6 +94,9 @@ export class WhatsappCampaignsService {
         ? new Date(input.scheduledAt)
         : null;
     }
+    if (input.variableMapping !== undefined) {
+      campaign.variableMapping = input.variableMapping;
+    }
 
     await this.campaigns.save(campaign);
     return this.serialize(campaign);
@@ -113,7 +119,10 @@ export class WhatsappCampaignsService {
   async launch(
     workspaceId: string,
     id: string,
-    planFeatures?: Record<string, boolean | string>,
+    opts?: {
+      planFeatures?: Record<string, boolean | string>;
+      metaPaymentReady?: boolean | null;
+    },
   ) {
     const campaign = await this.requireCampaign(workspaceId, id);
 
@@ -128,7 +137,7 @@ export class WhatsappCampaignsService {
     }
 
     // Plan-feature gate for wa_campaigns
-    if (planFeatures && planFeatures['wa_campaigns'] === false) {
+    if (opts?.planFeatures && opts.planFeatures['wa_campaigns'] === false) {
       throw new AppException(
         {
           code: WA_ERR.PLAN_FEATURE_REQUIRED,
@@ -138,31 +147,46 @@ export class WhatsappCampaignsService {
       );
     }
 
-    // Count audience contacts
-    const audienceCount = await this.contacts.count({
-      where: campaign.audienceIds.map((contactId) => ({
-        id: contactId,
-        workspaceId,
-        optedIn: true,
-      })),
-    });
+    // Meta payment-method gate (Tech Provider — Meta bills messages, not us)
+    if (opts?.metaPaymentReady === false) {
+      throw new AppException(
+        {
+          code: WA_ERR.META_PAYMENT_REQUIRED,
+          message:
+            'Add a payment method in WhatsApp Manager before launching a campaign. Meta bills conversations directly — this is not a CRM charge.',
+        },
+        403,
+      );
+    }
+
+    // Count opted-in audience contacts (`In([])` is invalid SQL)
+    const audienceCount = campaign.audienceIds.length
+      ? await this.contacts.count({
+          where: {
+            id: In(campaign.audienceIds),
+            workspaceId,
+            optedIn: true,
+          },
+        })
+      : 0;
+
+    if (audienceCount === 0) {
+      throw new AppException(
+        {
+          code: 'CAMPAIGN_NOT_LAUNCHABLE',
+          message:
+            'No opted-in contacts in this audience. Add contacts who have not sent STOP, then launch.',
+        },
+        400,
+      );
+    }
 
     campaign.status = 'RUNNING';
     campaign.launchedAt = new Date();
     campaign.stats = { ...campaign.stats, total: audienceCount };
     await this.campaigns.save(campaign);
 
-    // Enqueue campaign send job — NO wallet holds (Tech Provider)
-    await this.campaignQueue.add(
-      'send-campaign',
-      { campaignId: campaign.id, workspaceId },
-      {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: 100,
-        removeOnFail: 50,
-      },
-    );
+    await this.enqueueSendJob(campaign.id, workspaceId);
 
     return this.serialize(campaign);
   }
@@ -182,6 +206,39 @@ export class WhatsappCampaignsService {
     campaign.status = 'PAUSED';
     await this.campaigns.save(campaign);
     return this.serialize(campaign);
+  }
+
+  async resume(workspaceId: string, id: string) {
+    const campaign = await this.requireCampaign(workspaceId, id);
+    if (campaign.status !== 'PAUSED') {
+      throw new AppException(
+        {
+          code: 'CAMPAIGN_NOT_PAUSED',
+          message: 'Only paused campaigns can be resumed',
+        },
+        400,
+      );
+    }
+
+    campaign.status = 'RUNNING';
+    await this.campaigns.save(campaign);
+
+    await this.enqueueSendJob(campaign.id, workspaceId);
+
+    return this.serialize(campaign);
+  }
+
+  private async enqueueSendJob(campaignId: string, workspaceId: string) {
+    await this.campaignQueue.add(
+      'send-campaign',
+      { campaignId, workspaceId },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 50,
+      },
+    );
   }
 
   private async requireCampaign(
@@ -208,6 +265,7 @@ export class WhatsappCampaignsService {
       templateName: c.templateName,
       templateLanguage: c.templateLanguage,
       audienceIds: c.audienceIds,
+      variableMapping: c.variableMapping,
       scheduledAt: c.scheduledAt?.toISOString() ?? null,
       launchedAt: c.launchedAt?.toISOString() ?? null,
       completedAt: c.completedAt?.toISOString() ?? null,

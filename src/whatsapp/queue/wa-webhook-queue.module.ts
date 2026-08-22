@@ -10,6 +10,7 @@ import { PhoneNumber } from '../entities/phone-number.entity';
 import { WaContact } from '../entities/wa-contact.entity';
 import { WaInboxSettings } from '../entities/wa-inbox-settings.entity';
 import { WaAssignmentEvent } from '../entities/wa-assignment-event.entity';
+import { WaCampaign } from '../entities/wa-campaign.entity';
 import { WorkspaceService } from '../../workspaces/entities/workspace-service.entity';
 import { WorkspaceMember } from '../../workspaces/entities/workspace-member.entity';
 import { WA_WEBHOOK_QUEUE } from './wa-webhook.constants';
@@ -32,6 +33,7 @@ import { R2UploadService } from '../../common/services/r2-upload.service';
       WaContact,
       WaInboxSettings,
       WaAssignmentEvent,
+      WaCampaign,
       WorkspaceService,
       WorkspaceMember,
     ]),

@@ -12,6 +12,11 @@ import {
 import { WA_ERR } from '../whatsapp-error-codes';
 import { MetaGraphClient, type MetaTemplate } from './meta-graph.client';
 import { parseTemplateCategory } from '../utils/template-category';
+import type {
+  CreateTemplateDto,
+  TemplateButtonDto,
+  TemplateComponentDto,
+} from '../dto/create-template.dto';
 
 @Injectable()
 export class WhatsappTemplatesService {
@@ -33,20 +38,15 @@ export class WhatsappTemplatesService {
     return { templates: templates.map(this.serialize), total };
   }
 
-  async create(
-    workspaceId: string,
-    dto: {
-      name: string;
-      language: string;
-      category: TemplateCategory;
-      components: TemplateComponent[];
-    },
-  ) {
+  async create(workspaceId: string, dto: CreateTemplateDto) {
     const waba = await this.requireWaba(workspaceId);
     const token = decryptToken(waba.accessTokenEncrypted);
 
     // Meta rejects (INVALID_FORMAT) variable templates without sample values.
-    const components = attachVariableExamples(dto.components);
+    // Sanitize BUTTONS first (grouping, URL example suffix, phone digits).
+    const components = attachVariableExamples(
+      sanitizeButtonComponents(dto.components),
+    );
 
     const result = await this.meta.createTemplate(
       waba.metaWabaId,
@@ -235,6 +235,86 @@ function isMetaTemplateMissing(err: unknown): boolean {
     msg.includes('template name does not exist') ||
     msg.includes('no template exists')
   );
+}
+
+/**
+ * Meta rules for template buttons (template components docs):
+ * - max 2 URL, max 1 PHONE_NUMBER
+ * - QUICK_REPLY must be a contiguous group (not interleaved with URL/PHONE)
+ * - URL `example` is the {{1}} suffix (`summer2023`), not the full URL
+ * - PHONE_NUMBER is digits (Meta example: `15550051310`)
+ */
+export function sanitizeButtonComponents(
+  components: TemplateComponentDto[],
+): TemplateComponent[] {
+  return components.flatMap((c) => {
+    if (c.type !== 'BUTTONS') {
+      return [c as unknown as TemplateComponent];
+    }
+    const raw = c.buttons ?? [];
+    if (raw.length === 0) return [];
+
+    const urlCount = raw.filter((b) => b.type === 'URL').length;
+    const phoneCount = raw.filter((b) => b.type === 'PHONE_NUMBER').length;
+    if (urlCount > 2) {
+      throw new AppException(
+        {
+          code: 'TEMPLATE_INVALID_BUTTONS',
+          message: 'Meta allows at most 2 URL buttons on a template.',
+        },
+        400,
+      );
+    }
+    if (phoneCount > 1) {
+      throw new AppException(
+        {
+          code: 'TEMPLATE_INVALID_BUTTONS',
+          message: 'Meta allows only one phone number button on a template.',
+        },
+        400,
+      );
+    }
+
+    const callToAction = raw
+      .filter((b) => b.type !== 'QUICK_REPLY')
+      .map(normalizeTemplateButton);
+    const quickReplies = raw
+      .filter((b) => b.type === 'QUICK_REPLY')
+      .map(normalizeTemplateButton);
+
+    return [{ type: 'BUTTONS', buttons: [...callToAction, ...quickReplies] }];
+  });
+}
+
+function normalizeTemplateButton(
+  b: TemplateButtonDto,
+): NonNullable<TemplateComponent['buttons']>[number] {
+  if (b.type === 'QUICK_REPLY') {
+    return { type: 'QUICK_REPLY', text: b.text };
+  }
+  if (b.type === 'PHONE_NUMBER') {
+    const digits = (b.phone_number ?? '').replace(/\D/g, '');
+    return { type: 'PHONE_NUMBER', text: b.text, phone_number: digits };
+  }
+  const url = b.url ?? '';
+  const example = normalizeUrlButtonExample(url, b.example);
+  return example
+    ? { type: 'URL', text: b.text, url, example }
+    : { type: 'URL', text: b.text, url };
+}
+
+/** Meta example: url `…promo={{1}}` → example `["summer2023"]`. */
+function normalizeUrlButtonExample(
+  url: string,
+  example?: string[],
+): string[] | undefined {
+  if (!/\{\{1\}\}/.test(url) || !example?.[0]) return undefined;
+  const sample = example[0];
+  const prefix = url.split('{{1}}')[0] ?? '';
+  if (prefix && sample.startsWith(prefix)) {
+    return [sample.slice(prefix.length)];
+  }
+  return [sample];
 }
 
 /**

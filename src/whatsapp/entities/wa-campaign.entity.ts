@@ -49,6 +49,17 @@ export class WaCampaign extends BaseEntity {
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt!: Date | null;
 
+  /**
+   * Maps template variable position ("1", "2", …) to:
+   * `name` | `phone` | `attr:<key>` | `text:<literal>` (same value for every recipient).
+   */
+  @Column({
+    name: 'variable_mapping',
+    type: 'jsonb',
+    default: '{}',
+  })
+  variableMapping!: Record<string, string>;
+
   @Column({
     type: 'jsonb',
     default: '{"total":0,"sent":0,"delivered":0,"read":0,"failed":0}',

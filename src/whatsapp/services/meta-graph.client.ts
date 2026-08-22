@@ -190,9 +190,7 @@ export class MetaGraphClient {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) {
-      this.logger.warn(
-        `Meta media download failed: ${res.status} ${mediaUrl}`,
-      );
+      this.logger.warn(`Meta media download failed: ${res.status} ${mediaUrl}`);
       throw new AppException(
         {
           code: WA_ERR.MEDIA_UPLOAD_FAILED,
@@ -202,7 +200,8 @@ export class MetaGraphClient {
       );
     }
     const arrayBuffer = await res.arrayBuffer();
-    const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+    const contentType =
+      res.headers.get('content-type') ?? 'application/octet-stream';
     return { buffer: Buffer.from(arrayBuffer), contentType };
   }
 

@@ -11,6 +11,16 @@ export type TemplateStatus =
 
 export type TemplateCategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
 
+/** One button inside a BUTTONS component (Graph create payload). */
+export interface TemplateButton {
+  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
+  text: string;
+  url?: string;
+  /** URL {{1}} sample — the variable suffix only, e.g. `summer2023`. */
+  example?: string[];
+  phone_number?: string;
+}
+
 export interface TemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
   text?: string;
@@ -20,6 +30,8 @@ export interface TemplateComponent {
     body_text?: string[][];
     header_text?: string[];
   };
+  /** BUTTONS component only. */
+  buttons?: TemplateButton[];
 }
 
 @Index('idx_wa_templates_waba', ['wabaAccountId'])

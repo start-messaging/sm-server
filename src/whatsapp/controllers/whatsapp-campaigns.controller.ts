@@ -14,6 +14,7 @@ import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
 import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.guard';
 import { WhatsappCampaignsService } from '../services/whatsapp-campaigns.service';
+import { WhatsappConnectService } from '../services/whatsapp-connect.service';
 import { CreateCampaignDto, UpdateCampaignDto } from '../dto/campaign.dto';
 
 @ApiTags('whatsapp-campaigns')
@@ -21,7 +22,10 @@ import { CreateCampaignDto, UpdateCampaignDto } from '../dto/campaign.dto';
 @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
 @ApiBearerAuth()
 export class WhatsappCampaignsController {
-  constructor(private readonly campaignsService: WhatsappCampaignsService) {}
+  constructor(
+    private readonly campaignsService: WhatsappCampaignsService,
+    private readonly connectService: WhatsappConnectService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List campaigns' })
@@ -75,13 +79,17 @@ export class WhatsappCampaignsController {
 
   @Post(':id/launch')
   @ApiOperation({ summary: 'Launch campaign' })
-  launch(
+  async launch(
     @Param('slug') _slug: string,
     @Param('id') id: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
   ) {
     const planFeatures = ctx.workspace.plan?.features;
-    return this.campaignsService.launch(ctx.workspace.id, id, planFeatures);
+    const connStatus = await this.connectService.getStatus(ctx.workspace.id);
+    return this.campaignsService.launch(ctx.workspace.id, id, {
+      planFeatures,
+      metaPaymentReady: connStatus.metaPaymentReady,
+    });
   }
 
   @Post(':id/pause')
@@ -92,5 +100,15 @@ export class WhatsappCampaignsController {
     @CurrentWorkspace() ctx: WorkspaceContext,
   ) {
     return this.campaignsService.pause(ctx.workspace.id, id);
+  }
+
+  @Post(':id/resume')
+  @ApiOperation({ summary: 'Resume paused campaign' })
+  resume(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.campaignsService.resume(ctx.workspace.id, id);
   }
 }

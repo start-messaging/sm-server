@@ -37,7 +37,9 @@ export class AdminPipelineStageTemplatesController {
 
   @Patch(':id')
   @StaffAuth(PlatformRole.SUPER_ADMIN, PlatformRole.ADMIN)
-  @ApiOperation({ summary: 'Update a pipeline stage template (name, sortOrder, status)' })
+  @ApiOperation({
+    summary: 'Update a pipeline stage template (name, sortOrder, status)',
+  })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePipelineStageTemplateDto,

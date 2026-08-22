@@ -17,7 +17,9 @@ export class WhatsappInboxSettingsController {
   constructor(private readonly service: WhatsappInboxSettingsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get inbox settings (includes caller inboxAvailable)' })
+  @ApiOperation({
+    summary: 'Get inbox settings (includes caller inboxAvailable)',
+  })
   get(@Param('slug') _slug: string, @CurrentWorkspace() ctx: WorkspaceContext) {
     return this.service.get(ctx.workspace.id, ctx.membership.userId);
   }

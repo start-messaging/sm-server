@@ -27,7 +27,9 @@ export class AdminInboxOpsController {
 
   @Get('conversations')
   @StaffAuth()
-  @ApiOperation({ summary: 'List conversations for a workspace (staff observe)' })
+  @ApiOperation({
+    summary: 'List conversations for a workspace (staff observe)',
+  })
   listConversations(
     @Param('workspaceId', ParseUUIDPipe) workspaceId: string,
     @Query() query: AdminListConversationsQueryDto,
@@ -37,7 +39,9 @@ export class AdminInboxOpsController {
 
   @Get('conversations/:conversationId/messages')
   @StaffAuth()
-  @ApiOperation({ summary: 'Read-only message thread for a conversation (staff observe)' })
+  @ApiOperation({
+    summary: 'Read-only message thread for a conversation (staff observe)',
+  })
   listMessages(
     @Param('workspaceId', ParseUUIDPipe) workspaceId: string,
     @Param('conversationId', ParseUUIDPipe) conversationId: string,
@@ -63,7 +67,9 @@ export class AdminInboxOpsController {
     PlatformRole.SUPPORT,
     PlatformRole.RELATIONSHIP_MANAGER,
   )
-  @ApiOperation({ summary: 'Force-assign or unassign a conversation (platform staff)' })
+  @ApiOperation({
+    summary: 'Force-assign or unassign a conversation (platform staff)',
+  })
   forceAssign(
     @Param('workspaceId', ParseUUIDPipe) workspaceId: string,
     @Param('conversationId', ParseUUIDPipe) conversationId: string,
@@ -75,10 +81,10 @@ export class AdminInboxOpsController {
 
   @Get('members-load')
   @StaffAuth()
-  @ApiOperation({ summary: 'Workspace members with their open conversation counts' })
-  getMembersLoad(
-    @Param('workspaceId', ParseUUIDPipe) workspaceId: string,
-  ) {
+  @ApiOperation({
+    summary: 'Workspace members with their open conversation counts',
+  })
+  getMembersLoad(@Param('workspaceId', ParseUUIDPipe) workspaceId: string) {
     return this.service.getMembersLoad(workspaceId);
   }
 }

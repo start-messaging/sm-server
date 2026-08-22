@@ -90,6 +90,14 @@ export const WA_ERR = {
 
   /** Meta Graph returned an error while uploading or fetching media. */
   MEDIA_UPLOAD_FAILED: 'MEDIA_UPLOAD_FAILED',
+
+  // ── Contact opt-out ──────────────────────────────────────────────────────
+  /**
+   * Contact has unsubscribed (STOP / UNSUBSCRIBE / CANCEL / STOPALL).
+   * Blocks both session text and template sends until re-opted in.
+   * Never mention wallet or "add funds" — this is a consent gate.
+   */
+  CONTACT_OPTED_OUT: 'CONTACT_OPTED_OUT',
 } as const;
 
 export type WaErrorCode = (typeof WA_ERR)[keyof typeof WA_ERR];

@@ -17,6 +17,9 @@ export type MessageMediaType =
   unique: true,
   where: 'meta_message_id IS NOT NULL AND deleted_at IS NULL',
 })
+@Index('idx_wa_messages_campaign', ['campaignId'], {
+  where: 'campaign_id IS NOT NULL',
+})
 @Entity({ name: 'wa_messages' })
 export class WaMessage extends BaseEntity {
   @Column({ name: 'workspace_id', type: 'uuid' })
@@ -57,6 +60,10 @@ export class WaMessage extends BaseEntity {
     nullable: true,
   })
   metaMessageId!: string | null;
+
+  /** FK to wa_campaigns for campaign-sourced outbound messages. */
+  @Column({ name: 'campaign_id', type: 'uuid', nullable: true })
+  campaignId!: string | null;
 
   /** Meta Graph / webhook error code when status is failed (e.g. 131049). */
   @Column({ name: 'failure_code', type: 'int', nullable: true })

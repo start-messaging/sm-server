@@ -12,7 +12,12 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AppException } from '../../common/exceptions/app.exception';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
@@ -23,6 +28,7 @@ import { WorkspaceRole } from '../../workspaces/entities/workspace-member.entity
 import {
   WhatsappMessagesService,
   ConversationTab,
+  ConversationFilters,
 } from '../services/whatsapp-messages.service';
 import {
   WhatsappSendService,
@@ -67,13 +73,41 @@ export class WhatsappMessagesController {
     @Param('slug') _slug: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
     @Query('tab') tab?: string,
+    @Query('unread') unread?: string,
+    @Query('assigneeUserId') assigneeUserId?: string,
+    @Query('window') window?: string,
+    @Query('tag') tag?: string,
   ) {
     const validTab: ConversationTab =
       tab === 'all' || tab === 'active' || tab === 'mine' ? tab : 'all';
+    const filters: ConversationFilters = {
+      unread: unread === 'true' ? true : undefined,
+      assigneeUserId: assigneeUserId || undefined,
+      window:
+        window === 'open' ? 'open' : window === 'closed' ? 'closed' : undefined,
+      tag: tag || undefined,
+    };
     return this.messagesService.listConversations(
       ctx.workspace.id,
       ctx.membership,
       validTab,
+      filters,
+    );
+  }
+
+  @Get(':conversationId/assignment-events')
+  @ApiOperation({
+    summary: 'List assignment events for a conversation (oldest → newest)',
+  })
+  listAssignmentEvents(
+    @Param('slug') _slug: string,
+    @Param('conversationId') conversationId: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.messagesService.listAssignmentEvents(
+      ctx.workspace.id,
+      conversationId,
+      ctx.membership,
     );
   }
 
@@ -110,7 +144,8 @@ export class WhatsappMessagesController {
   @Post(':conversationId/media')
   @MinRole(WorkspaceRole.AGENT)
   @ApiOperation({
-    summary: 'Upload and send a media message (image / audio / video / document)',
+    summary:
+      'Upload and send a media message (image / audio / video / document)',
   })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
@@ -132,8 +167,7 @@ export class WhatsappMessagesController {
         400,
       );
     }
-    const mimeType =
-      file.mimetype ?? 'application/octet-stream';
+    const mimeType = file.mimetype ?? 'application/octet-stream';
     const mediaType = resolveMediaTypeFromMime(mimeType);
     if (!isAllowedOutboundMediaType(mediaType)) {
       throw new AppException(
@@ -145,7 +179,7 @@ export class WhatsappMessagesController {
       );
     }
     return this.sendService.send(ctx.workspace.id, conversationId, {
-      type: mediaType as 'image' | 'audio' | 'video' | 'document',
+      type: mediaType,
       buffer: file.buffer,
       mimeType,
       filename: file.originalname ?? 'upload',

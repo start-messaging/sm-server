@@ -13,7 +13,9 @@ export class AdminPipelineStageTemplatesService {
   ) {}
 
   async list() {
-    const rows = await this.templates.find({ order: { sortOrder: 'ASC', createdAt: 'ASC' } });
+    const rows = await this.templates.find({
+      order: { sortOrder: 'ASC', createdAt: 'ASC' },
+    });
     return { pipelineStageTemplates: rows };
   }
 
@@ -28,7 +30,8 @@ export class AdminPipelineStageTemplatesService {
 
   async update(id: string, dto: UpdatePipelineStageTemplateDto) {
     const template = await this.templates.findOne({ where: { id } });
-    if (!template) throw new NotFoundException('Pipeline stage template not found');
+    if (!template)
+      throw new NotFoundException('Pipeline stage template not found');
     if (dto.name !== undefined) template.name = dto.name;
     if (dto.sortOrder !== undefined) template.sortOrder = dto.sortOrder;
     if (dto.status !== undefined) template.status = dto.status;
@@ -37,7 +40,8 @@ export class AdminPipelineStageTemplatesService {
 
   async remove(id: string): Promise<void> {
     const template = await this.templates.findOne({ where: { id } });
-    if (!template) throw new NotFoundException('Pipeline stage template not found');
+    if (!template)
+      throw new NotFoundException('Pipeline stage template not found');
     await this.templates.softDelete(id);
   }
 }

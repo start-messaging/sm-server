@@ -46,10 +46,12 @@ import {
   MemberStatus,
   WorkspaceRole,
 } from '../../workspaces/entities/workspace-member.entity';
+import { WaAssignmentEvent } from '../entities/wa-assignment-event.entity';
+import { WaCampaign } from '../entities/wa-campaign.entity';
 import {
-  WaAssignmentEvent,
-} from '../entities/wa-assignment-event.entity';
-import { WhatsappMediaService, resolveMediaType } from '../services/whatsapp-media.service';
+  WhatsappMediaService,
+  resolveMediaType,
+} from '../services/whatsapp-media.service';
 
 export interface WaWebhookJobData {
   eventId: string;
@@ -80,6 +82,8 @@ export class WaWebhookProcessor extends WorkerHost {
     private readonly members: Repository<WorkspaceMember>,
     @InjectRepository(WaAssignmentEvent)
     private readonly assignmentEvents: Repository<WaAssignmentEvent>,
+    @InjectRepository(WaCampaign)
+    private readonly campaigns: Repository<WaCampaign>,
     private readonly inboxRealtime: InboxRealtimeService,
     private readonly mediaService: WhatsappMediaService,
   ) {
@@ -299,6 +303,25 @@ export class WaWebhookProcessor extends WorkerHost {
             contactName,
           );
 
+          // STOP / UNSUBSCRIBE / CANCEL / STOPALL → opt-out
+          const STOP_KEYWORDS = new Set([
+            'STOP',
+            'UNSUBSCRIBE',
+            'CANCEL',
+            'STOPALL',
+          ]);
+          if (
+            textBody &&
+            STOP_KEYWORDS.has(textBody.trim().toUpperCase()) &&
+            contact.optedIn
+          ) {
+            contact.optedIn = false;
+            await this.contacts.save(contact);
+            this.logger.log(
+              `contact ${contact.id} opted out (keyword: ${textBody.trim()})`,
+            );
+          }
+
           let conversation = await this.findConversationForInbound(
             workspaceId,
             contactPhone,
@@ -354,9 +377,7 @@ export class WaWebhookProcessor extends WorkerHost {
               timestamp,
               metaMessageId: wamid,
               templateName: null,
-              mediaType: isMediaType
-                ? (msgType as 'image' | 'audio' | 'video' | 'document' | 'sticker')
-                : null,
+              mediaType: isMediaType ? msgType : null,
               mediaR2Key: null,
               mediaUrl: null,
               mediaMime: null,
@@ -408,9 +429,7 @@ export class WaWebhookProcessor extends WorkerHost {
     messageId: string,
   ): Promise<void> {
     try {
-      const mediaObj = msg[msgType] as
-        | Record<string, string>
-        | undefined;
+      const mediaObj = msg[msgType] as Record<string, string> | undefined;
       const mediaId = mediaObj?.['id'];
       if (!mediaId) {
         this.logger.warn(
@@ -633,8 +652,27 @@ export class WaWebhookProcessor extends WorkerHost {
         return '[location]';
       case MetaInboundMessageType.CONTACTS:
         return '[contacts]';
-      case MetaInboundMessageType.INTERACTIVE:
+      case MetaInboundMessageType.INTERACTIVE: {
+        const interactive = msg['interactive'] as
+          | Record<string, unknown>
+          | undefined;
+        if (interactive) {
+          const interactiveType = interactive['type'] as string | undefined;
+          if (interactiveType === 'button_reply') {
+            const reply = interactive['button_reply'] as
+              | Record<string, string>
+              | undefined;
+            if (reply?.['title']) return reply['title'];
+          }
+          if (interactiveType === 'list_reply') {
+            const reply = interactive['list_reply'] as
+              | Record<string, string>
+              | undefined;
+            if (reply?.['title']) return reply['title'];
+          }
+        }
         return '[interactive]';
+      }
       case MetaInboundMessageType.BUTTON:
         return (
           (msg['button'] as Record<string, string> | undefined)?.['text'] ??
@@ -687,6 +725,7 @@ export class WaWebhookProcessor extends WorkerHost {
             message &&
             this.isStatusAdvancement(message.status, mappedStatus)
           ) {
+            const prevStatus = message.status;
             message.status = mappedStatus;
             if (mappedStatus === 'failed') {
               const extracted = extractStatusFailure(statusUpdate);
@@ -702,10 +741,66 @@ export class WaWebhookProcessor extends WorkerHost {
               message.conversationId,
               'status',
             );
+            await this.incrementCampaignStats(message, mappedStatus, prevStatus);
           }
         }
       }
     }
+  }
+
+  /**
+   * Rolls up a status advancement into the parent campaign's stats counters.
+   * Uses a fresh reload of the campaign row to avoid clobbering `sent` written
+   * concurrently by the campaign processor.
+   *
+   * Rules (once per message lifecycle, never double-count processor's failed):
+   *   delivered → stats.delivered += 1
+   *   read      → stats.read += 1; ensure delivered >= read
+   *   failed    → stats.failed += 1 only when prev was sent or delivered
+   */
+  private async incrementCampaignStats(
+    message: WaMessage,
+    newStatus: MessageStatus,
+    prevStatus: MessageStatus,
+  ): Promise<void> {
+    const campaignId =
+      'campaignId' in message
+        ? (message as { campaignId?: string | null }).campaignId
+        : null;
+    if (!campaignId) return;
+
+    if (
+      newStatus !== 'delivered' &&
+      newStatus !== 'read' &&
+      newStatus !== 'failed'
+    ) {
+      return;
+    }
+    if (newStatus === 'failed' && prevStatus !== 'sent' && prevStatus !== 'delivered') {
+      return;
+    }
+
+    // Reload to get the latest `sent` count from the campaign processor.
+    const campaign = await this.campaigns.findOne({ where: { id: campaignId } });
+    if (!campaign) {
+      this.logger.warn(
+        `incrementCampaignStats: campaign ${campaignId} not found for message ${message.id}`,
+      );
+      return;
+    }
+
+    const s = { ...campaign.stats };
+    if (newStatus === 'delivered') {
+      s.delivered += 1;
+    } else if (newStatus === 'read') {
+      s.read += 1;
+      // Ensure delivered is at least as high as read (guards out-of-order webhooks).
+      if (s.delivered < s.read) s.delivered = s.read;
+    } else {
+      s.failed += 1;
+    }
+    campaign.stats = s;
+    await this.campaigns.save(campaign);
   }
 
   private async handleTemplateStatus(event: WaWebhookEvent): Promise<void> {

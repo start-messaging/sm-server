@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsIn,
@@ -23,6 +24,46 @@ export class TemplateComponentExampleDto {
   header_text?: string[];
 }
 
+/**
+ * One button inside a BUTTONS component.
+ *
+ * Meta shapes (Business Management API):
+ *   QUICK_REPLY  → { type, text }
+ *   URL          → { type, text, url, example?: [string] }  (example required if url has {{1}})
+ *   PHONE_NUMBER → { type, text, phone_number }
+ */
+export class TemplateButtonDto {
+  @IsString()
+  @IsIn(['QUICK_REPLY', 'URL', 'PHONE_NUMBER'])
+  type!: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
+
+  /** Button label — Max 25 chars per Meta. */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(25)
+  text!: string;
+
+  /** URL buttons only. Supports one {{1}} variable at the end of the URL. */
+  @IsOptional()
+  @IsString()
+  url?: string;
+
+  /**
+   * URL buttons only: sample value(s) for the {{1}} variable in `url`.
+   * Meta requires this when the url string contains {{1}}.
+   * Send as a single-element array, e.g. ["https://example.com/promo"].
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  example?: string[];
+
+  /** PHONE_NUMBER buttons only. E.164 format. */
+  @IsOptional()
+  @IsString()
+  phone_number?: string;
+}
+
 /** Nested component — must be decorated or ValidationPipe whitelist strips fields. */
 export class TemplateComponentDto {
   @IsString()
@@ -41,6 +82,17 @@ export class TemplateComponentDto {
   @ValidateNested()
   @Type(() => TemplateComponentExampleDto)
   example?: TemplateComponentExampleDto;
+
+  /**
+   * BUTTONS component only: 1–3 buttons.
+   * Must use @ValidateNested + @Type so ValidationPipe whitelist does not strip nested fields.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => TemplateButtonDto)
+  buttons?: TemplateButtonDto[];
 }
 
 export class CreateTemplateDto {

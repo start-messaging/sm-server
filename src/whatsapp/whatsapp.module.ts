@@ -16,6 +16,7 @@ import { WhatsappTemplateExamplesController } from './controllers/whatsapp-templ
 import { WhatsappQuickRepliesController } from './controllers/whatsapp-quick-replies.controller';
 import { WhatsappPipelineStagesController } from './controllers/whatsapp-pipeline-stages.controller';
 import { WhatsappInboxSettingsController } from './controllers/whatsapp-inbox-settings.controller';
+import { WhatsappInboxPresenceController } from './controllers/whatsapp-inbox-presence.controller';
 import { WhatsappRealtimeModule } from './realtime/whatsapp-realtime.module';
 import { PhoneNumber } from './entities/phone-number.entity';
 import { WabaAccount } from './entities/waba-account.entity';
@@ -51,6 +52,7 @@ import { AdminPipelineStageTemplatesService } from './services/admin-pipeline-st
 import { WhatsappQuickRepliesService } from './services/whatsapp-quick-replies.service';
 import { WhatsappPipelineStagesService } from './services/whatsapp-pipeline-stages.service';
 import { WhatsappInboxSettingsService } from './services/whatsapp-inbox-settings.service';
+import { WhatsappInboxPresenceService } from './services/whatsapp-inbox-presence.service';
 import { WhatsappMediaService } from './services/whatsapp-media.service';
 import { R2UploadService } from '../common/services/r2-upload.service';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
@@ -116,6 +118,7 @@ import { AdminModule } from '../admin/admin.module';
     AdminInboxOpsService,
     AdminPipelineStageTemplatesService,
     WhatsappMediaService,
+    WhatsappInboxPresenceService,
     R2UploadService,
     WorkspaceMemberGuard,
   ],
@@ -134,6 +137,7 @@ import { AdminModule } from '../admin/admin.module';
     WhatsappQuickRepliesController,
     WhatsappPipelineStagesController,
     WhatsappInboxSettingsController,
+    WhatsappInboxPresenceController,
     AdminInboxOpsController,
     AdminPipelineStageTemplatesController,
   ],
