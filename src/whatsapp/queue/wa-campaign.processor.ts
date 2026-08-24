@@ -133,24 +133,24 @@ export class WaCampaignProcessor extends WorkerHost {
           continue;
         }
 
-        try {
-          const built = this.buildBodyComponents(
-            campaign.variableMapping ?? {},
+        const built = this.buildBodyComponents(
+          campaign.variableMapping ?? {},
+          recipient,
+        );
+        if (built.missing.length > 0) {
+          await this.recordFailedSend(
+            campaign,
+            workspaceId,
             recipient,
+            131008,
+            `Template variable ${built.missing.map((n) => `{{${n}}}`).join(', ')} is empty. Use a fixed value for everyone, or map to a contact field that has a value.`,
+            templateBodyText,
+            built.components[0]?.parameters ?? [],
           );
-          if (built.missing.length > 0) {
-            await this.recordFailedSend(
-              campaign,
-              workspaceId,
-              recipient,
-              131008,
-              `Template variable ${built.missing.map((n) => `{{${n}}}`).join(', ')} is empty. Use a fixed value for everyone, or map to a contact field that has a value.`,
-              templateBodyText,
-              built.components[0]?.parameters ?? [],
-            );
-            continue;
-          }
+          continue;
+        }
 
+        try {
           const result = await this.meta.sendMessage(
             phone.metaPhoneNumberId,
             {
