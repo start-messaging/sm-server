@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Country } from '../../countries/entities/country.entity';
@@ -109,6 +110,7 @@ export class PhoneNumber extends BaseEntity {
   messagingLimitPerDay!: number;
 
   /** KMS-encrypted two-step re-registration PIN. Never logged or serialized. */
+  @Exclude()
   @Column({
     name: 'registration_pin_encrypted',
     type: 'varchar',
@@ -134,4 +136,18 @@ export class PhoneNumber extends BaseEntity {
 
   @Column({ name: 'registered_at', type: 'timestamptz', nullable: true })
   registeredAt!: Date | null;
+
+  /**
+   * Meta's display-name review state for this phone number.
+   * Values: 'APPROVED' | 'PENDING_REVIEW' | 'DECLINED' | null (unknown).
+   * Populated at connect via `name_status` Graph field; kept current by
+   * `phone_number_name_update` webhooks.
+   */
+  @Column({
+    name: 'display_name_status',
+    type: 'varchar',
+    length: 40,
+    nullable: true,
+  })
+  displayNameStatus!: string | null;
 }

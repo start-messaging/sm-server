@@ -32,6 +32,12 @@ export interface WabaInfo {
   business_id?: string;
   currency?: string;
   timezone_id?: string;
+  /** Pending/Approved/Rejected review result for the WABA itself. */
+  account_review_status?: string;
+  /** Business Manager verification state (NOT number-level). */
+  business_verification_status?: string;
+  /** Account-level health signal object from Graph. */
+  health_status?: { can_send_message?: string; entities?: unknown[] };
 }
 
 export interface PhoneNumberInfo {
@@ -40,7 +46,14 @@ export interface PhoneNumberInfo {
   verified_name?: string;
   quality_rating?: string;
   status?: string;
-  messaging_limit_tier?: string;
+  /**
+   * Current daily-conversation cap (replaces the deprecated
+   * `messaging_limit_tier` string enum which Meta removed in v20+).
+   * Values: 0 (unverified), 1000, 10000, 100000, unlimited (-1).
+   */
+  whatsapp_business_manager_messaging_limit?: number;
+  /** Display name review state, e.g. 'APPROVED' | 'PENDING' | 'DECLINED'. */
+  name_status?: string;
 }
 
 @Injectable()
@@ -90,7 +103,7 @@ export class MetaGraphClient {
 
   /** Fetch WABA details from the Graph API. */
   async getWaba(wabaId: string, accessToken: string): Promise<WabaInfo> {
-    const url = `${GRAPH_BASE}/${this.version}/${wabaId}?fields=id,name,business_id,currency,timezone_id`;
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}?fields=id,name,business_id,currency,timezone_id,account_review_status,business_verification_status,health_status`;
     return this.get<WabaInfo>(url, accessToken);
   }
 
@@ -99,7 +112,7 @@ export class MetaGraphClient {
     wabaId: string,
     accessToken: string,
   ): Promise<PhoneNumberInfo[]> {
-    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,status,messaging_limit_tier`;
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,status,whatsapp_business_manager_messaging_limit,name_status`;
     const res = await this.get<{ data: PhoneNumberInfo[] }>(url, accessToken);
     return res.data ?? [];
   }

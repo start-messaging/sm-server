@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Service } from '../../services/entities/service.entity';
@@ -92,6 +93,7 @@ export class WabaAccount extends BaseEntity {
   businessName!: string | null;
 
   /** KMS-encrypted long-lived system-user token. Never serialized in a DTO. */
+  @Exclude()
   @Column({ name: 'access_token_encrypted', type: 'text' })
   accessTokenEncrypted!: string;
 
@@ -131,6 +133,47 @@ export class WabaAccount extends BaseEntity {
     nullable: true,
   })
   verificationSyncedAt!: Date | null;
+
+  /**
+   * Meta's account-review result for the WABA (separate from number-level name
+   * review). Populated at connect and kept current by `account_review_update`
+   * webhooks. Values: 'PENDING' | 'APPROVED' | 'REJECTED' | null.
+   */
+  @Column({
+    name: 'account_review_status',
+    type: 'varchar',
+    length: 40,
+    nullable: true,
+  })
+  accountReviewStatus!: string | null;
+
+  /**
+   * Meta Business Manager verification state for the business that owns this WABA.
+   * Values mirror Graph API: 'not_verified' | 'pending' | 'verified' | 'rejected'.
+   */
+  @Column({
+    name: 'business_verification_status',
+    type: 'varchar',
+    length: 40,
+    nullable: true,
+  })
+  businessVerificationStatus!: string | null;
+
+  /**
+   * Whether Meta has confirmed a valid payment method on the WABA.
+   * null = unknown (never received a payment_configuration_update webhook yet).
+   * false = no payment method — template sends will be blocked by Meta.
+   * true  = payment method present and active.
+   */
+  @Column({ name: 'meta_payment_ready', type: 'boolean', nullable: true })
+  metaPaymentReady!: boolean | null;
+
+  /**
+   * True when Meta's `account_alerts` webhook fires with `BUSINESS_INITIATED`
+   * channel enabled — i.e. the number has the Official Business Account badge.
+   */
+  @Column({ name: 'is_official_business', type: 'boolean', default: false })
+  isOfficialBusiness!: boolean;
 
   /**
    * Bounded, audit-only snapshot of Meta's connect response. Never a query/filter

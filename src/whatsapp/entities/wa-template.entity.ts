@@ -25,6 +25,12 @@ export interface TemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
   text?: string;
   format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  /**
+   * HEADER format IMAGE/VIDEO/DOCUMENT only: publicly-accessible media URL,
+   * passed through to Meta unchanged. See open issue in create-template.dto.ts
+   * — Meta's real API may require example.header_handle instead.
+   */
+  link?: string;
   /** Required by Meta when text contains {{n}} variables. */
   example?: {
     body_text?: string[][];
@@ -104,4 +110,17 @@ export class WaTemplate extends BaseEntity {
     nullable: true,
   })
   metaTemplateId!: string | null;
+
+  /**
+   * Meta's quality signal for this template: 'HIGH' | 'MEDIUM' | 'LOW'.
+   * Updated by `message_template_quality_update` webhooks. Null until Meta
+   * has sent the first quality event (new templates start without a score).
+   */
+  @Column({
+    name: 'quality_score',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  qualityScore!: string | null;
 }

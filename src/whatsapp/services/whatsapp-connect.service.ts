@@ -60,10 +60,16 @@ export interface WabaConnectionStatusResponse {
   status: 'connected' | 'disconnected' | 'not_connected';
   displayName: string | null;
   phoneNumber: string | null;
+  /** null = unknown (no payment webhook received yet). */
   metaPaymentReady: boolean | null;
   wabaId: string | null;
   /** True when WABA is linked but phone is not yet Cloud API registered. */
   phoneRegistrationPending: boolean;
+  accountReviewStatus: string | null;
+  businessVerificationStatus: string | null;
+  messagingLimitPerDay: number | null;
+  qualityRating: string | null;
+  displayNameStatus: string | null;
 }
 
 const SERVICE_KEY = 'whatsapp';
@@ -175,6 +181,8 @@ export class WhatsappConnectService {
         webhookSubscribed: true,
         status: WabaAccountStatus.ACTIVE,
         verificationStatus: WabaVerificationStatus.UNVERIFIED,
+        accountReviewStatus: wabaInfo.account_review_status?.toUpperCase() ?? null,
+        businessVerificationStatus: wabaInfo.business_verification_status ?? null,
         rawMetadata: wabaInfo as unknown as Record<string, unknown>,
       });
       await em.save(waba);
@@ -191,6 +199,10 @@ export class WhatsappConnectService {
         fallbackCountry,
       );
 
+      const rawLimit = phoneInfo.whatsapp_business_manager_messaging_limit;
+      const messagingLimitPerDay =
+        typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : 250;
+
       const phone = em.create(PhoneNumber, {
         wabaAccountId: waba.id,
         workspaceId,
@@ -198,6 +210,8 @@ export class WhatsappConnectService {
         displayNumberE164: e164,
         countryCode,
         verifiedName: phoneInfo.verified_name ?? null,
+        messagingLimitPerDay,
+        displayNameStatus: phoneInfo.name_status?.toUpperCase() ?? null,
         status: phoneStatus,
         registeredAt,
       });
@@ -320,6 +334,11 @@ export class WhatsappConnectService {
         metaPaymentReady: null,
         wabaId: null,
         phoneRegistrationPending: false,
+        accountReviewStatus: null,
+        businessVerificationStatus: null,
+        messagingLimitPerDay: null,
+        qualityRating: null,
+        displayNameStatus: null,
       };
     }
 
@@ -334,12 +353,17 @@ export class WhatsappConnectService {
       status,
       displayName: waba.businessName ?? phone?.verifiedName ?? null,
       phoneNumber: phone?.displayNumberE164 ?? null,
-      metaPaymentReady: null,
+      metaPaymentReady: waba.metaPaymentReady,
       wabaId: waba.metaWabaId,
       phoneRegistrationPending:
         status === 'connected' &&
         !!phone &&
         phone.status === WaPhoneNumberStatus.PENDING,
+      accountReviewStatus: waba.accountReviewStatus,
+      businessVerificationStatus: waba.businessVerificationStatus,
+      messagingLimitPerDay: phone?.messagingLimitPerDay ?? null,
+      qualityRating: phone?.qualityRating ?? null,
+      displayNameStatus: phone?.displayNameStatus ?? null,
     };
   }
 

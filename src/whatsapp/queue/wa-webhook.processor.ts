@@ -11,7 +11,7 @@ import {
 } from '../entities/wa-webhook-event.entity';
 import { WaConversation } from '../entities/wa-conversation.entity';
 import { WaMessage, MessageStatus } from '../entities/wa-message.entity';
-import { WaTemplate } from '../entities/wa-template.entity';
+import { WaTemplate, TemplateStatus } from '../entities/wa-template.entity';
 import { WaContact } from '../entities/wa-contact.entity';
 import { WaInboxSettings } from '../entities/wa-inbox-settings.entity';
 import {
@@ -52,6 +52,10 @@ import {
   WhatsappMediaService,
   resolveMediaType,
 } from '../services/whatsapp-media.service';
+import { WhatsappSendService } from '../services/whatsapp-send.service';
+import { WhatsappAutoRepliesService } from '../auto-replies/whatsapp-auto-replies.service';
+import { Workspace } from '../../workspaces/entities/workspace.entity';
+import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
 
 export interface WaWebhookJobData {
   eventId: string;
@@ -84,8 +88,12 @@ export class WaWebhookProcessor extends WorkerHost {
     private readonly assignmentEvents: Repository<WaAssignmentEvent>,
     @InjectRepository(WaCampaign)
     private readonly campaigns: Repository<WaCampaign>,
+    @InjectRepository(Workspace)
+    private readonly workspaces: Repository<Workspace>,
     private readonly inboxRealtime: InboxRealtimeService,
     private readonly mediaService: WhatsappMediaService,
+    private readonly sendService: WhatsappSendService,
+    private readonly autoReplies: WhatsappAutoRepliesService,
   ) {
     super();
   }
@@ -150,13 +158,13 @@ export class WaWebhookProcessor extends WorkerHost {
         await this.handlePhoneQualityUpdate(event);
         break;
       case WaWebhookEventType.VERIFICATION_UPDATE:
-        this.noopField(event, 'account_review_update');
+        await this.handleAccountReviewUpdate(event);
         break;
       case WaWebhookEventType.SECURITY:
         this.noopField(event, 'security');
         break;
       case WaWebhookEventType.ACCOUNT_ALERTS:
-        this.noopField(event, 'account_alerts');
+        await this.handleAccountAlerts(event);
         break;
       case WaWebhookEventType.ACCOUNT_SETTINGS_UPDATE:
         this.noopField(event, 'account_settings_update');
@@ -165,7 +173,7 @@ export class WaWebhookProcessor extends WorkerHost {
         this.noopField(event, 'automatic_events');
         break;
       case WaWebhookEventType.BUSINESS_CAPABILITY_UPDATE:
-        this.noopField(event, 'business_capability_update');
+        await this.handleBusinessCapabilityUpdate(event);
         break;
       case WaWebhookEventType.BUSINESS_STATUS_UPDATE:
         this.noopField(event, 'business_status_update');
@@ -201,7 +209,7 @@ export class WaWebhookProcessor extends WorkerHost {
         this.noopField(event, 'message_template_components_update');
         break;
       case WaWebhookEventType.MESSAGE_TEMPLATE_QUALITY_UPDATE:
-        this.noopField(event, 'message_template_quality_update');
+        await this.handleTemplateQualityUpdate(event);
         break;
       case WaWebhookEventType.MESSAGING_HANDOVERS:
         this.noopField(event, 'messaging_handovers');
@@ -210,10 +218,10 @@ export class WaWebhookProcessor extends WorkerHost {
         this.noopField(event, 'partner_solutions');
         break;
       case WaWebhookEventType.PAYMENT_CONFIGURATION_UPDATE:
-        this.noopField(event, 'payment_configuration_update');
+        await this.handlePaymentConfigurationUpdate(event);
         break;
       case WaWebhookEventType.PHONE_NUMBER_NAME_UPDATE:
-        this.noopField(event, 'phone_number_name_update');
+        await this.handlePhoneNumberNameUpdate(event);
         break;
       case WaWebhookEventType.SMB_APP_STATE_SYNC:
         this.noopField(event, 'smb_app_state_sync');
@@ -234,7 +242,7 @@ export class WaWebhookProcessor extends WorkerHost {
         this.noopField(event, 'tracking_events');
         break;
       case WaWebhookEventType.USER_PREFERENCES:
-        this.noopField(event, 'user_preferences');
+        await this.handleUserPreferences(event);
         break;
       case WaWebhookEventType.OTHER:
         this.noopField(event, 'other');
@@ -244,6 +252,333 @@ export class WaWebhookProcessor extends WorkerHost {
         this.logger.warn(
           `wa-webhook ${event.id}: unhandled eventType=${String(_exhaustive)}`,
         );
+      }
+    }
+  }
+
+  /**
+   * account_review_update — Meta notifies when the WABA's app-review status
+   * changes. We store the new status and update the ordering-guard timestamp.
+   */
+  private async handleAccountReviewUpdate(
+    event: WaWebhookEvent,
+  ): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      id?: string;
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const decision = value['decision'] as string | undefined;
+        const metaWabaId =
+          (value['waba_id'] as string | undefined) ?? entry.id;
+
+        if (!metaWabaId || !decision) continue;
+
+        this.logger.log(
+          `account_review_update: waba=${metaWabaId} decision=${decision}`,
+          { eventId: event.id },
+        );
+
+        await this.wabaAccounts.update(
+          { metaWabaId },
+          {
+            accountReviewStatus: decision.toUpperCase(),
+            verificationSyncedAt: new Date(),
+          },
+        );
+      }
+    }
+  }
+
+  /**
+   * account_alerts — covers OBA (Official Business Account) eligibility and
+   * payment-related account state changes.
+   */
+  private async handleAccountAlerts(event: WaWebhookEvent): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      id?: string;
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const alertType = value['alert_type'] as string | undefined;
+        const metaWabaId =
+          (value['waba_id'] as string | undefined) ?? entry.id;
+
+        if (!metaWabaId) continue;
+
+        this.logger.log(
+          `account_alerts: waba=${metaWabaId} alert_type=${alertType ?? 'unknown'}`,
+          { eventId: event.id },
+        );
+
+        // OBA grants/revocations
+        if (alertType === 'BUSINESS_INITIATED_MESSAGING_REESTABLISHED') {
+          await this.wabaAccounts.update({ metaWabaId }, { isOfficialBusiness: true });
+        } else if (alertType === 'BUSINESS_INITIATED_MESSAGING_DISRUPTED') {
+          await this.wabaAccounts.update({ metaWabaId }, { isOfficialBusiness: false });
+        }
+
+        // Payment failures signal no valid payment method
+        if (alertType === 'PAYMENT_ISSUE') {
+          await this.wabaAccounts.update({ metaWabaId }, { metaPaymentReady: false });
+        }
+      }
+    }
+  }
+
+  /**
+   * business_capability_update — carries updated `max_daily_conversations_per_business`
+   * which replaces the deprecated `messaging_limit_tier` number.
+   */
+  private async handleBusinessCapabilityUpdate(
+    event: WaWebhookEvent,
+  ): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      id?: string;
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const rawLimit = value['max_daily_conversations_per_business'];
+        const metaWabaId =
+          (value['waba_id'] as string | undefined) ?? entry.id;
+
+        if (!metaWabaId) continue;
+
+        const newLimit =
+          typeof rawLimit === 'number'
+            ? rawLimit
+            : typeof rawLimit === 'string'
+              ? parseInt(rawLimit, 10)
+              : undefined;
+
+        if (newLimit === undefined || isNaN(newLimit)) continue;
+
+        this.logger.log(
+          `business_capability_update: waba=${metaWabaId} limit=${newLimit}`,
+          { eventId: event.id },
+        );
+
+        // Update all active phone numbers under this WABA
+        const waba = await this.wabaAccounts.findOne({
+          where: { metaWabaId },
+          select: { id: true },
+        });
+        if (!waba) continue;
+
+        await this.phoneNumbers.update(
+          { wabaAccountId: waba.id },
+          { messagingLimitPerDay: newLimit, statusSyncedAt: new Date() },
+        );
+      }
+    }
+  }
+
+  /**
+   * payment_configuration_update — Meta sends this when the payment method
+   * linked to the WABA changes (added, removed, expired).
+   */
+  private async handlePaymentConfigurationUpdate(
+    event: WaWebhookEvent,
+  ): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      id?: string;
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const metaWabaId =
+          (value['waba_id'] as string | undefined) ?? entry.id;
+        const eventType = value['event'] as string | undefined;
+
+        if (!metaWabaId) continue;
+
+        // 'PAYMENT_METHOD_ATTACHED' | 'PAYMENT_METHOD_EXPIRED' | 'PAYMENT_METHOD_DETACHED'
+        const paymentReady =
+          eventType === 'PAYMENT_METHOD_ATTACHED'
+            ? true
+            : eventType === 'PAYMENT_METHOD_EXPIRED' ||
+                eventType === 'PAYMENT_METHOD_DETACHED'
+              ? false
+              : null;
+
+        this.logger.log(
+          `payment_configuration_update: waba=${metaWabaId} event=${eventType ?? 'unknown'} paymentReady=${String(paymentReady)}`,
+          { eventId: event.id },
+        );
+
+        if (paymentReady !== null) {
+          await this.wabaAccounts.update({ metaWabaId }, { metaPaymentReady: paymentReady });
+        }
+      }
+    }
+  }
+
+  /**
+   * phone_number_name_update — Meta notifies when a number's display-name
+   * review decision changes (APPROVED / DECLINED / PENDING_REVIEW).
+   */
+  private async handlePhoneNumberNameUpdate(
+    event: WaWebhookEvent,
+  ): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      id?: string;
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const decision = value['decision'] as string | undefined;
+        const displayPhone = value['display_phone_number'] as
+          | string
+          | undefined;
+        const metaPhoneNumberId = value['phone_number_id'] as
+          | string
+          | undefined;
+
+        if (!decision) continue;
+
+        this.logger.log(
+          `phone_number_name_update: phone=${displayPhone ?? metaPhoneNumberId ?? 'unknown'} decision=${decision}`,
+          { eventId: event.id },
+        );
+
+        if (metaPhoneNumberId) {
+          await this.phoneNumbers.update(
+            { metaPhoneNumberId },
+            { displayNameStatus: decision.toUpperCase(), statusSyncedAt: new Date() },
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * message_template_quality_update — Meta fires this when a template's
+   * quality score shifts (HIGH → MEDIUM → LOW → PAUSED/DISABLED).
+   * We mirror the new status back onto the local template row.
+   */
+  private async handleTemplateQualityUpdate(
+    event: WaWebhookEvent,
+  ): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      id?: string;
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const templateName = value['message_template_name'] as
+          | string
+          | undefined;
+        const newQualityScore = value['new_quality_score'] as
+          | string
+          | undefined;
+        const templateStatus = value['message_template_status'] as
+          | string
+          | undefined;
+
+        if (!templateName) continue;
+
+        const workspaceId = await this.resolveWorkspaceId(event.wabaAccountId);
+        if (!workspaceId) continue;
+
+        const template = await this.findLocalTemplate(workspaceId, {
+          name: templateName,
+        });
+        if (!template) continue;
+
+        this.logger.log(
+          `message_template_quality_update: template=${templateName} qualityScore=${newQualityScore ?? 'unknown'} status=${templateStatus ?? 'unknown'}`,
+          { eventId: event.id },
+        );
+
+        const update: Record<string, unknown> = {};
+        if (newQualityScore) update['qualityScore'] = newQualityScore.toUpperCase();
+        if (templateStatus) {
+          const mapped = this.mapMetaTemplateStatus(templateStatus);
+          if (mapped) update['status'] = mapped;
+        }
+
+        if (Object.keys(update).length) {
+          await this.templates.update({ id: template.id }, update);
+        }
+      }
+    }
+  }
+
+  /**
+   * user_preferences — Meta sends opt-in/opt-out decisions from end-users
+   * (e.g. a user clicked "Stop marketing messages" in a WhatsApp menu).
+   * We honour their preference immediately by toggling `optedIn` on the contact.
+   */
+  private async handleUserPreferences(event: WaWebhookEvent): Promise<void> {
+    const payload = event.payload;
+    const entries = (payload['entry'] as unknown[]) ?? [];
+
+    for (const entry of entries as Array<{
+      id?: string;
+      changes?: Array<{ value?: Record<string, unknown> }>;
+    }>) {
+      const changes = entry.changes ?? [];
+      for (const change of changes) {
+        const value = change.value ?? {};
+        const preferences = value['preferences'] as
+          | Array<{ type?: string; preference?: string; phone_number?: string }>
+          | undefined;
+        if (!preferences?.length) continue;
+
+        const workspaceId = await this.resolveWorkspaceId(event.wabaAccountId);
+        if (!workspaceId) continue;
+
+        for (const pref of preferences) {
+          if (pref.type !== 'marketing_messages') continue;
+          const phone = pref.phone_number;
+          if (!phone) continue;
+
+          let normalized: string;
+          try {
+            normalized = normalizeWaE164(phone);
+          } catch {
+            normalized = phone;
+          }
+
+          const optedIn = pref.preference !== 'optout';
+
+          this.logger.log(
+            `user_preferences: workspace=${workspaceId} phone=${normalized} optedIn=${String(optedIn)}`,
+            { eventId: event.id },
+          );
+
+          await this.contacts.update(
+            { workspaceId, phoneE164: normalized },
+            { optedIn },
+          );
+        }
       }
     }
   }
@@ -408,6 +743,13 @@ export class WaWebhookProcessor extends WorkerHost {
                 contactPhone: conversation.contactPhone,
               },
             );
+
+            await this.maybeSendAutoReply(
+              workspaceId,
+              conversation,
+              contact,
+              textBody,
+            );
           }
         }
       }
@@ -547,6 +889,78 @@ export class WaWebhookProcessor extends WorkerHost {
       await this.contacts.save(contact);
     }
     return contact;
+  }
+
+  /**
+   * Keyword auto-reply. Fires only when the workspace plan grants
+   * `keyword_autoreplies`, the contact is still opted in, and no outbound
+   * message (agent or earlier auto-reply) landed in this conversation within
+   * `autoReplyDelaySeconds` — the grace window that keeps the bot from talking
+   * over a human. Sends through WhatsappSendService, which owns the 24-hour
+   * window / opt-out / template checks; a rejected send is logged, never
+   * propagated, so a bad rule can't fail the webhook job.
+   */
+  private async maybeSendAutoReply(
+    workspaceId: string,
+    conversation: WaConversation,
+    contact: WaContact,
+    inboundText: string | null,
+  ): Promise<void> {
+    if (!inboundText?.trim() || !contact.optedIn) return;
+
+    const workspace = await this.workspaces.findOne({
+      where: { id: workspaceId },
+      relations: { plan: true },
+    });
+    if (!workspace?.plan?.features?.[PLAN_FEATURE_KEYS.keywordAutoreplies]) {
+      return;
+    }
+
+    const settings = await this.inboxSettings.findOne({
+      where: { workspaceId },
+    });
+    const delaySeconds = settings?.autoReplyDelaySeconds ?? 0;
+    if (delaySeconds > 0) {
+      const since = new Date(Date.now() - delaySeconds * 1000);
+      const recentOutbound = await this.messages
+        .createQueryBuilder('m')
+        .where('m.conversation_id = :conversationId', {
+          conversationId: conversation.id,
+        })
+        .andWhere('m.direction = :direction', { direction: 'outbound' })
+        .andWhere('m.timestamp >= :since', { since })
+        .getExists();
+      if (recentOutbound) return;
+    }
+
+    const rule = await this.autoReplies.findMatchingRule(
+      workspaceId,
+      inboundText,
+    );
+    if (!rule) return;
+
+    try {
+      if (rule.replyType === 'text') {
+        await this.sendService.send(workspaceId, conversation.id, {
+          type: 'text',
+          text: rule.replyText ?? '',
+        });
+      } else {
+        await this.sendService.send(workspaceId, conversation.id, {
+          type: 'template',
+          templateName: rule.replyTemplateName ?? '',
+          templateLanguage: rule.replyTemplateLanguage ?? '',
+        });
+      }
+      this.logger.log(
+        `auto-reply rule ${rule.id} fired on conversation ${conversation.id}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `auto-reply rule ${rule.id} send failed on conversation ` +
+          `${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -741,7 +1155,11 @@ export class WaWebhookProcessor extends WorkerHost {
               message.conversationId,
               'status',
             );
-            await this.incrementCampaignStats(message, mappedStatus, prevStatus);
+            await this.incrementCampaignStats(
+              message,
+              mappedStatus,
+              prevStatus,
+            );
           }
         }
       }
@@ -776,12 +1194,18 @@ export class WaWebhookProcessor extends WorkerHost {
     ) {
       return;
     }
-    if (newStatus === 'failed' && prevStatus !== 'sent' && prevStatus !== 'delivered') {
+    if (
+      newStatus === 'failed' &&
+      prevStatus !== 'sent' &&
+      prevStatus !== 'delivered'
+    ) {
       return;
     }
 
     // Reload to get the latest `sent` count from the campaign processor.
-    const campaign = await this.campaigns.findOne({ where: { id: campaignId } });
+    const campaign = await this.campaigns.findOne({
+      where: { id: campaignId },
+    });
     if (!campaign) {
       this.logger.warn(
         `incrementCampaignStats: campaign ${campaignId} not found for message ${message.id}`,
@@ -1329,6 +1753,18 @@ export class WaWebhookProcessor extends WorkerHost {
       select: { workspaceId: true },
     });
     return waba?.workspaceId ?? null;
+  }
+
+  private mapMetaTemplateStatus(status: string): TemplateStatus | null {
+    const s = status.toUpperCase();
+    const valid: Record<string, TemplateStatus> = {
+      APPROVED: 'APPROVED',
+      PENDING: 'PENDING',
+      REJECTED: 'REJECTED',
+      PAUSED: 'PAUSED',
+      DISABLED: 'DISABLED',
+    };
+    return valid[s] ?? null;
   }
 
   private mapMetaStatus(status: string): MessageStatus | null {
