@@ -27,9 +27,14 @@ export interface AdminConnectedWabaRow {
   businessName: string | null;
   wabaStatus: WabaAccountStatus | null;
   verificationStatus: WabaAccount['verificationStatus'] | null;
+  accountReviewStatus: string | null;
+  businessVerificationStatus: string | null;
+  metaPaymentReady: boolean | null;
   phoneNumbers: {
     displayNumberE164: string;
     qualityRating: PhoneNumber['qualityRating'];
+    messagingLimitPerDay: number;
+    displayNameStatus: string | null;
     status: WaPhoneNumberStatus;
   }[];
   connectedAt: string | null;
@@ -105,9 +110,14 @@ export class AdminConnectedWabasService {
         businessName: waba.businessName,
         wabaStatus: waba.status,
         verificationStatus: waba.verificationStatus,
+        accountReviewStatus: waba.accountReviewStatus,
+        businessVerificationStatus: waba.businessVerificationStatus,
+        metaPaymentReady: waba.metaPaymentReady,
         phoneNumbers: phoneRows.map((p) => ({
           displayNumberE164: p.displayNumberE164,
           qualityRating: p.qualityRating,
+          messagingLimitPerDay: p.messagingLimitPerDay,
+          displayNameStatus: p.displayNameStatus,
           status: p.status,
         })),
         connectedAt: waba.createdAt?.toISOString() ?? null,
