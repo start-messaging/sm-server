@@ -12,6 +12,7 @@ import {
 } from '../entities/phone-number.entity';
 import { WaConversation } from '../entities/wa-conversation.entity';
 import { WaMessage } from '../entities/wa-message.entity';
+import { WaTemplate } from '../entities/wa-template.entity';
 import { decryptToken } from '../crypto/token-encryption';
 import { MetaGraphClient } from '../services/meta-graph.client';
 import { AppException } from '../../common/exceptions/app.exception';
@@ -62,6 +63,8 @@ export class WaCampaignProcessor extends WorkerHost {
     private readonly conversations: Repository<WaConversation>,
     @InjectRepository(WaMessage)
     private readonly messages: Repository<WaMessage>,
+    @InjectRepository(WaTemplate)
+    private readonly waTemplates: Repository<WaTemplate>,
   ) {
     super();
   }
@@ -99,6 +102,13 @@ export class WaCampaignProcessor extends WorkerHost {
 
     const recipients = await this.buildRecipients(campaign, workspaceId);
 
+    // Fetch template body once for hydration — avoids N DB lookups in the loop.
+    const templateBodyText = await this.fetchTemplateBody(
+      workspaceId,
+      campaign.templateName,
+      campaign.templateLanguage,
+    );
+
     campaign.stats = { ...campaign.stats, total: recipients.length };
     await this.persistProgress(campaign);
 
@@ -135,6 +145,8 @@ export class WaCampaignProcessor extends WorkerHost {
               recipient,
               131008,
               `Template variable ${built.missing.map((n) => `{{${n}}}`).join(', ')} is empty. Use a fixed value for everyone, or map to a contact field that has a value.`,
+              templateBodyText,
+              built.components[0]?.parameters ?? [],
             );
             continue;
           }
@@ -162,12 +174,17 @@ export class WaCampaignProcessor extends WorkerHost {
             campaign.name,
           );
 
+          const hydratedBody = this.hydrateBody(
+            templateBodyText,
+            built.components[0]?.parameters ?? [],
+          );
+
           const message = this.messages.create({
             workspaceId,
             conversationId: conversation.id,
             direction: 'outbound',
             status: 'sent',
-            body: null,
+            body: hydratedBody,
             templateName: campaign.templateName,
             timestamp: new Date(),
             metaMessageId: wamid || null,
@@ -190,6 +207,8 @@ export class WaCampaignProcessor extends WorkerHost {
             recipient,
             code,
             reason,
+            templateBodyText,
+            built.components[0]?.parameters ?? [],
           );
 
           if (billing) {
@@ -282,6 +301,8 @@ export class WaCampaignProcessor extends WorkerHost {
     recipient: CampaignRecipient,
     code: number | null,
     reason: string,
+    templateBodyText: string | null,
+    parameters: Array<{ type: 'text'; text: string }>,
   ): Promise<void> {
     const conversation = await this.ensureConversation(
       workspaceId,
@@ -293,7 +314,7 @@ export class WaCampaignProcessor extends WorkerHost {
       conversationId: conversation.id,
       direction: 'outbound',
       status: 'failed',
-      body: null,
+      body: this.hydrateBody(templateBodyText, parameters),
       templateName: campaign.templateName,
       timestamp: new Date(),
       metaMessageId: null,
@@ -541,6 +562,39 @@ export class WaCampaignProcessor extends WorkerHost {
       reason: err instanceof Error ? err.message : String(err),
       billing: false,
     };
+  }
+
+  /**
+   * Look up the BODY component text from our local WaTemplate row.
+   * Returns null if the template isn't in DB yet (e.g. just submitted to Meta).
+   */
+  private async fetchTemplateBody(
+    workspaceId: string,
+    name: string,
+    language: string,
+  ): Promise<string | null> {
+    const tpl = await this.waTemplates.findOne({
+      where: { workspaceId, name, language },
+      select: { components: true },
+    });
+    if (!tpl) return null;
+    const body = tpl.components.find((c) => c.type === 'BODY');
+    return body?.text ?? null;
+  }
+
+  /**
+   * Substitute `{{1}}`, `{{2}}` … with the resolved parameter texts.
+   * Returns null when there is no template body to work from.
+   */
+  private hydrateBody(
+    bodyText: string | null,
+    parameters: Array<{ type: 'text'; text: string }>,
+  ): string | null {
+    if (!bodyText) return null;
+    return bodyText.replace(/\{\{(\d+)\}\}/g, (_match, n: string) => {
+      const idx = parseInt(n, 10) - 1;
+      return parameters[idx]?.text ?? `{{${n}}}`;
+    });
   }
 
   private async markFailed(
