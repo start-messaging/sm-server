@@ -4,10 +4,23 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository, In } from 'typeorm';
 import { AppException } from '../../common/exceptions/app.exception';
-import { WaCampaign, CampaignStatus } from '../entities/wa-campaign.entity';
+import { parseMobileOrThrow } from '../../common/phone/parse-mobile';
+import {
+  WaCampaign,
+  CampaignAudienceCsvEntry,
+  CampaignStatus,
+} from '../entities/wa-campaign.entity';
 import { WaContact } from '../entities/wa-contact.entity';
+import { WaMessage } from '../entities/wa-message.entity';
 import { WA_ERR } from '../whatsapp-error-codes';
 import { WA_CAMPAIGN_QUEUE } from '../queue/wa-campaign.constants';
+
+export interface CampaignAnalyticsDayPoint {
+  date: string;
+  delivered: number;
+  read: number;
+  failed: number;
+}
 
 export interface CreateCampaignInput {
   name: string;
@@ -36,6 +49,8 @@ export class WhatsappCampaignsService {
     private readonly campaigns: Repository<WaCampaign>,
     @InjectRepository(WaContact)
     private readonly contacts: Repository<WaContact>,
+    @InjectRepository(WaMessage)
+    private readonly messages: Repository<WaMessage>,
     @InjectQueue(WA_CAMPAIGN_QUEUE)
     private readonly campaignQueue: Queue,
   ) {}
@@ -45,7 +60,7 @@ export class WhatsappCampaignsService {
       where: { workspaceId },
       order: { createdAt: 'DESC' },
     });
-    return { campaigns: campaigns.map(this.serialize), total };
+    return { campaigns: campaigns.map((c) => this.serialize(c)), total };
   }
 
   async getById(workspaceId: string, id: string) {
@@ -67,6 +82,25 @@ export class WhatsappCampaignsService {
     });
     await this.campaigns.save(campaign);
     return this.serialize(campaign);
+  }
+
+  async duplicate(workspaceId: string, id: string) {
+    const original = await this.requireCampaign(workspaceId, id);
+
+    const clone = this.campaigns.create({
+      workspaceId,
+      name: `Copy of ${original.name}`,
+      templateName: original.templateName,
+      templateLanguage: original.templateLanguage,
+      audienceIds: original.audienceIds,
+      audienceCsv: original.audienceCsv,
+      variableMapping: original.variableMapping,
+      scheduledAt: null,
+      status: 'DRAFT' as CampaignStatus,
+      stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 },
+    });
+    await this.campaigns.save(clone);
+    return this.serialize(clone);
   }
 
   async update(workspaceId: string, id: string, input: UpdateCampaignInput) {
@@ -120,7 +154,6 @@ export class WhatsappCampaignsService {
     workspaceId: string,
     id: string,
     opts?: {
-      planFeatures?: Record<string, boolean | string>;
       metaPaymentReady?: boolean | null;
     },
   ) {
@@ -136,16 +169,7 @@ export class WhatsappCampaignsService {
       );
     }
 
-    // Plan-feature gate for wa_campaigns
-    if (opts?.planFeatures && opts.planFeatures['wa_campaigns'] === false) {
-      throw new AppException(
-        {
-          code: WA_ERR.PLAN_FEATURE_REQUIRED,
-          message: 'Your CRM plan does not include campaigns. Please upgrade.',
-        },
-        403,
-      );
-    }
+    // The wa_campaigns plan gate lives in RequiresFeatureGuard on the route.
 
     // Meta payment-method gate (Tech Provider — Meta bills messages, not us)
     if (opts?.metaPaymentReady === false) {
@@ -159,8 +183,9 @@ export class WhatsappCampaignsService {
       );
     }
 
-    // Count opted-in audience contacts (`In([])` is invalid SQL)
-    const audienceCount = campaign.audienceIds.length
+    // Count opted-in audience contacts (`In([])` is invalid SQL). CSV rows
+    // were already opt-out-filtered on upload, so they count as-is.
+    const contactAudienceCount = campaign.audienceIds.length
       ? await this.contacts.count({
           where: {
             id: In(campaign.audienceIds),
@@ -169,6 +194,7 @@ export class WhatsappCampaignsService {
           },
         })
       : 0;
+    const audienceCount = contactAudienceCount + campaign.audienceCsv.length;
 
     if (audienceCount === 0) {
       throw new AppException(
@@ -228,6 +254,124 @@ export class WhatsappCampaignsService {
     return this.serialize(campaign);
   }
 
+  /**
+   * Replace a campaign's CSV audience (Track 5c). Each row's `phone` must be
+   * a valid E.164 number — invalid rows are dropped. Rows whose phone
+   * matches an existing opted-out `WaContact` are dropped too, so a CSV
+   * upload can never re-target someone who sent STOP. `attr:<key>` row keys
+   * become `attrs` for template variable mapping at send time.
+   */
+  async setAudienceCsv(
+    workspaceId: string,
+    id: string,
+    rows: Record<string, string>[],
+  ) {
+    const campaign = await this.requireCampaign(workspaceId, id);
+
+    if (campaign.status !== 'DRAFT') {
+      throw new AppException(
+        {
+          code: 'CAMPAIGN_NOT_EDITABLE',
+          message: 'Only DRAFT campaigns can be edited',
+        },
+        400,
+      );
+    }
+
+    const seen = new Set<string>();
+    const validated: CampaignAudienceCsvEntry[] = [];
+    let skippedInvalidPhone = 0;
+    let skippedDuplicate = 0;
+
+    for (const row of rows) {
+      let e164: string;
+      try {
+        ({ e164 } = parseMobileOrThrow(row.phone ?? ''));
+      } catch {
+        skippedInvalidPhone++;
+        continue;
+      }
+      if (seen.has(e164)) {
+        skippedDuplicate++;
+        continue;
+      }
+      seen.add(e164);
+
+      const attrs: Record<string, string> = {};
+      for (const [key, value] of Object.entries(row)) {
+        if (key.startsWith('attr:') && value?.trim()) {
+          attrs[key.slice('attr:'.length)] = value.trim();
+        }
+      }
+
+      const name = row.name?.trim();
+      validated.push({
+        phoneE164: e164,
+        ...(name ? { name } : {}),
+        ...(Object.keys(attrs).length ? { attrs } : {}),
+      });
+    }
+
+    const optedOutContacts = validated.length
+      ? await this.contacts.find({
+          where: {
+            workspaceId,
+            phoneE164: In(validated.map((v) => v.phoneE164)),
+            optedIn: false,
+          },
+          select: { phoneE164: true },
+        })
+      : [];
+    const optedOutPhones = new Set(optedOutContacts.map((c) => c.phoneE164));
+    const finalRows = validated.filter((v) => !optedOutPhones.has(v.phoneE164));
+
+    campaign.audienceCsv = finalRows;
+    await this.campaigns.save(campaign);
+
+    return {
+      campaign: this.serialize(campaign),
+      added: finalRows.length,
+      skippedInvalidPhone,
+      skippedDuplicate,
+      skippedOptedOut: optedOutPhones.size,
+    };
+  }
+
+  async analytics(workspaceId: string, id: string) {
+    const campaign = await this.requireCampaign(workspaceId, id);
+
+    const rows = await this.messages
+      .createQueryBuilder('m')
+      .select("to_char(date_trunc('day', m.created_at), 'YYYY-MM-DD')", 'date')
+      .addSelect('m.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('m.campaign_id = :campaignId', { campaignId: id })
+      .andWhere('m.workspace_id = :workspaceId', { workspaceId })
+      .groupBy("date_trunc('day', m.created_at)")
+      .addGroupBy('m.status')
+      .orderBy("date_trunc('day', m.created_at)", 'ASC')
+      .getRawMany<{ date: string; status: string; count: string }>();
+
+    const byDay = new Map<string, CampaignAnalyticsDayPoint>();
+    for (const row of rows) {
+      let point = byDay.get(row.date);
+      if (!point) {
+        point = { date: row.date, delivered: 0, read: 0, failed: 0 };
+        byDay.set(row.date, point);
+      }
+      const count = Number(row.count);
+      if (row.status === 'delivered') point.delivered += count;
+      else if (row.status === 'read') point.read += count;
+      else if (row.status === 'failed') point.failed += count;
+    }
+
+    const timeseries = Array.from(byDay.values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+
+    return { stats: campaign.stats, timeseries };
+  }
+
   private async enqueueSendJob(campaignId: string, workspaceId: string) {
     await this.campaignQueue.add(
       'send-campaign',
@@ -265,6 +409,7 @@ export class WhatsappCampaignsService {
       templateName: c.templateName,
       templateLanguage: c.templateLanguage,
       audienceIds: c.audienceIds,
+      audienceCsv: c.audienceCsv,
       variableMapping: c.variableMapping,
       scheduledAt: c.scheduledAt?.toISOString() ?? null,
       launchedAt: c.launchedAt?.toISOString() ?? null,

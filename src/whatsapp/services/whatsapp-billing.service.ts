@@ -141,7 +141,8 @@ export class WhatsappBillingService {
     // For now, return a marker based on tier
     const priceMap: Record<string, string> = {
       FREE: '0',
-      STARTER: '49900000', // ₹499/mo in micros
+      BASIC: '49900000', // ₹499/mo in micros
+      ADVANCED: '149900000',
       GROWTH: '149900000',
       BUSINESS: '499900000',
     };

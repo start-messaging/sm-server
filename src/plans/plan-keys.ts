@@ -12,4 +12,14 @@ export const PLAN_LIMIT_KEYS = {
   maxMembers: 'max_members',
   /** Max AGENT-role members per workspace (member-invite slice). */
   maxAgents: 'max_agents',
+  /** Max WhatsApp contacts per workspace (contact create / CSV import). */
+  maxContacts: 'max_contacts',
+} as const;
+
+export const PLAN_FEATURE_KEYS = {
+  waCampaigns: 'wa_campaigns',
+  agentInbox: 'agent_inbox',
+  campaignAnalytics: 'campaign_analytics',
+  keywordAutoreplies: 'keyword_autoreplies',
+  apiAccess: 'api_access',
 } as const;

@@ -11,11 +11,15 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
 import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.guard';
+import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
+import { RequiresFeature } from '../guards/requires-feature.decorator';
+import { RequiresFeatureGuard } from '../guards/requires-feature.guard';
 import { WhatsappInboxPresenceService } from '../services/whatsapp-inbox-presence.service';
 
 @ApiTags('whatsapp-messages')
 @Controller({ path: 'workspaces/:slug/whatsapp/conversations', version: '1' })
-@UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
+@UseGuards(JwtAuthGuard, WorkspaceMemberGuard, RequiresFeatureGuard)
+@RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
 @ApiBearerAuth()
 export class WhatsappInboxPresenceController {
   constructor(private readonly presenceService: WhatsappInboxPresenceService) {}

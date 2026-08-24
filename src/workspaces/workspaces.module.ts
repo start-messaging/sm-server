@@ -5,6 +5,7 @@ import { CountriesModule } from '../countries/countries.module';
 import { PlansModule } from '../plans/plans.module';
 import { WorkspaceInvitation } from '../members/entities/workspace-invitation.entity';
 import { ServicesModule } from '../services/services.module';
+import { WaContact } from '../whatsapp/entities/wa-contact.entity';
 import { UsersModule } from '../users/users.module';
 import { WalletModule } from '../wallets/wallet.module';
 import { CreateWorkspaceController } from './create-workspace.controller';
@@ -27,6 +28,8 @@ import { WorkspacesService } from './workspaces.service';
       // Registered so PlanLimitService can count PENDING invitations (reserved
       // seats) toward max_members / max_agents.
       WorkspaceInvitation,
+      // Registered so PlanLimitService can count contacts toward max_contacts.
+      WaContact,
     ]),
     UsersModule,
     CountriesModule,

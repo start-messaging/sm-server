@@ -22,6 +22,19 @@ export interface CampaignJobData {
   workspaceId: string;
 }
 
+/**
+ * A send target — either a real `WaContact` row (audienceIds) or a
+ * validated `audienceCsv` row, unified so the send loop below doesn't care
+ * which source it came from. `id` is null for CSV rows with no matching
+ * contact.
+ */
+interface CampaignRecipient {
+  id: string | null;
+  phoneE164: string;
+  name: string | null;
+  attributes: Record<string, unknown>;
+}
+
 const BATCH_SIZE = 50;
 
 const SUCCESS_STATUSES = new Set(['sent', 'delivered', 'read']);
@@ -84,44 +97,42 @@ export class WaCampaignProcessor extends WorkerHost {
 
     const token = decryptToken(waba.accessTokenEncrypted);
 
-    const audienceContacts = campaign.audienceIds.length
-      ? await this.contacts.find({
-          where: { id: In(campaign.audienceIds), workspaceId, optedIn: true },
-        })
-      : [];
+    const recipients = await this.buildRecipients(campaign, workspaceId);
 
-    campaign.stats = { ...campaign.stats, total: audienceContacts.length };
+    campaign.stats = { ...campaign.stats, total: recipients.length };
     await this.persistProgress(campaign);
 
-    for (let i = 0; i < audienceContacts.length; i += BATCH_SIZE) {
+    for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
       if (await this.isPaused(campaignId)) {
         this.logger.log(`Campaign ${campaignId} paused mid-send`);
         return;
       }
 
-      const alreadySentContactIds = await this.getAlreadySentContactIds(
+      const alreadySentPhones = await this.getAlreadySentPhones(
         campaignId,
         workspaceId,
-        audienceContacts,
       );
 
-      const batch = audienceContacts.slice(i, i + BATCH_SIZE);
+      const batch = recipients.slice(i, i + BATCH_SIZE);
 
-      for (const contact of batch) {
-        if (alreadySentContactIds.has(contact.id)) {
+      for (const recipient of batch) {
+        if (
+          alreadySentPhones.has(recipient.phoneE164) ||
+          alreadySentPhones.has(recipient.phoneE164.replace(/^\+/, ''))
+        ) {
           continue;
         }
 
         try {
           const built = this.buildBodyComponents(
             campaign.variableMapping ?? {},
-            contact,
+            recipient,
           );
           if (built.missing.length > 0) {
             await this.recordFailedSend(
               campaign,
               workspaceId,
-              contact,
+              recipient,
               131008,
               `Template variable ${built.missing.map((n) => `{{${n}}}`).join(', ')} is empty. Use a fixed value for everyone, or map to a contact field that has a value.`,
             );
@@ -131,7 +142,7 @@ export class WaCampaignProcessor extends WorkerHost {
           const result = await this.meta.sendMessage(
             phone.metaPhoneNumberId,
             {
-              to: contact.phoneE164.replace(/^\+/, ''),
+              to: recipient.phoneE164.replace(/^\+/, ''),
               type: 'template',
               template: {
                 name: campaign.templateName,
@@ -147,7 +158,7 @@ export class WaCampaignProcessor extends WorkerHost {
           const wamid = result.messages[0]?.id ?? '';
           const conversation = await this.ensureConversation(
             workspaceId,
-            contact,
+            recipient,
             campaign.name,
           );
 
@@ -169,14 +180,14 @@ export class WaCampaignProcessor extends WorkerHost {
           const { code, reason, billing } = this.extractMetaError(err);
 
           this.logger.warn(
-            `Campaign ${campaignId} send to ${contact.phoneE164} failed: ` +
+            `Campaign ${campaignId} send to ${recipient.phoneE164} failed: ` +
               `code=${code ?? 'unknown'} reason=${reason}`,
           );
 
           await this.recordFailedSend(
             campaign,
             workspaceId,
-            contact,
+            recipient,
             code,
             reason,
           );
@@ -223,7 +234,7 @@ export class WaCampaignProcessor extends WorkerHost {
    */
   private buildBodyComponents(
     mapping: Record<string, string>,
-    contact: WaContact,
+    recipient: CampaignRecipient,
   ): {
     components: Array<{
       type: 'body';
@@ -238,7 +249,7 @@ export class WaCampaignProcessor extends WorkerHost {
 
     const missing: string[] = [];
     const parameters = keys.map((key) => {
-      const text = this.resolveMappedValue(mapping[key]!, contact);
+      const text = this.resolveMappedValue(mapping[key]!, recipient);
       if (!text.trim()) missing.push(key);
       return { type: 'text' as const, text };
     });
@@ -249,13 +260,17 @@ export class WaCampaignProcessor extends WorkerHost {
     };
   }
 
-  private resolveMappedValue(field: string, contact: WaContact): string {
-    if (field === 'name') return contact.name ?? '';
-    if (field === 'phone') return contact.phoneE164;
+  private resolveMappedValue(
+    field: string,
+    recipient: CampaignRecipient,
+  ): string {
+    if (field === 'name') return recipient.name ?? '';
+    if (field === 'phone') return recipient.phoneE164;
     if (field.startsWith('attr:')) {
       const attrKey = field.slice('attr:'.length);
-      const raw = contact.attributes?.[attrKey];
-      return raw == null ? '' : String(raw);
+      const raw = recipient.attributes?.[attrKey];
+      if (raw == null) return '';
+      return typeof raw === 'string' ? raw : JSON.stringify(raw);
     }
     if (field.startsWith('text:')) return field.slice('text:'.length);
     return '';
@@ -264,13 +279,13 @@ export class WaCampaignProcessor extends WorkerHost {
   private async recordFailedSend(
     campaign: WaCampaign,
     workspaceId: string,
-    contact: WaContact,
+    recipient: CampaignRecipient,
     code: number | null,
     reason: string,
   ): Promise<void> {
     const conversation = await this.ensureConversation(
       workspaceId,
-      contact,
+      recipient,
       campaign.name,
     );
     const failedMsg = this.messages.create({
@@ -294,13 +309,73 @@ export class WaCampaignProcessor extends WorkerHost {
   }
 
   /**
-   * Contacts that already got a successful send for this campaign.
-   * Failed rows are left retryable on resume.
+   * Unified send targets for a campaign: `audienceIds` contacts (must still
+   * be opted-in) plus validated `audienceCsv` rows (Track 5c — already
+   * opt-out-filtered on upload, but re-checked here in case a matching
+   * contact opted out afterwards). Deduped by phone, contacts win over CSV
+   * rows for the same number so a real contact record + id is preferred.
    */
-  private async getAlreadySentContactIds(
+  private async buildRecipients(
+    campaign: WaCampaign,
+    workspaceId: string,
+  ): Promise<CampaignRecipient[]> {
+    const audienceContacts = campaign.audienceIds.length
+      ? await this.contacts.find({
+          where: { id: In(campaign.audienceIds), workspaceId, optedIn: true },
+        })
+      : [];
+
+    const csvEntries = campaign.audienceCsv ?? [];
+    const csvContactMatches = csvEntries.length
+      ? await this.contacts.find({
+          where: {
+            phoneE164: In(csvEntries.map((e) => e.phoneE164)),
+            workspaceId,
+          },
+        })
+      : [];
+    const matchByPhone = new Map(
+      csvContactMatches.map((c) => [c.phoneE164, c] as const),
+    );
+
+    const seenPhones = new Set<string>();
+    const recipients: CampaignRecipient[] = [];
+
+    for (const contact of audienceContacts) {
+      if (seenPhones.has(contact.phoneE164)) continue;
+      seenPhones.add(contact.phoneE164);
+      recipients.push({
+        id: contact.id,
+        phoneE164: contact.phoneE164,
+        name: contact.name,
+        attributes: contact.attributes,
+      });
+    }
+
+    for (const entry of csvEntries) {
+      if (seenPhones.has(entry.phoneE164)) continue;
+      const matched = matchByPhone.get(entry.phoneE164);
+      if (matched && !matched.optedIn) continue;
+      seenPhones.add(entry.phoneE164);
+      recipients.push({
+        id: matched?.id ?? null,
+        phoneE164: entry.phoneE164,
+        name: entry.name ?? matched?.name ?? null,
+        attributes: entry.attrs ?? matched?.attributes ?? {},
+      });
+    }
+
+    return recipients;
+  }
+
+  /**
+   * Phones that already got a successful send for this campaign. Keyed by
+   * phone rather than contact id since CSV recipients may have no
+   * `WaContact` row. Failed rows are left retryable on resume.
+   */
+  private async getAlreadySentPhones(
     campaignId: string,
     workspaceId: string,
-    audience: WaContact[],
   ): Promise<Set<string>> {
     const existing = await this.messages.find({
       where: { campaignId, workspaceId },
@@ -317,40 +392,33 @@ export class WaCampaignProcessor extends WorkerHost {
 
     const convs = await this.conversations.find({
       where: { id: In(convIds) },
-      select: { id: true, contactId: true, contactPhone: true },
+      select: { id: true, contactPhone: true },
     });
 
-    const phoneToContactId = new Map<string, string>();
-    for (const c of audience) {
-      phoneToContactId.set(c.phoneE164, c.id);
-      phoneToContactId.set(c.phoneE164.replace(/^\+/, ''), c.id);
-    }
-
-    const ids = new Set<string>();
+    const phones = new Set<string>();
     for (const conv of convs) {
-      if (conv.contactId) ids.add(conv.contactId);
-      const byPhone = phoneToContactId.get(conv.contactPhone);
-      if (byPhone) ids.add(byPhone);
+      phones.add(conv.contactPhone);
+      phones.add(conv.contactPhone.replace(/^\+/, ''));
     }
-    return ids;
+    return phones;
   }
 
   private async ensureConversation(
     workspaceId: string,
-    contact: WaContact,
+    recipient: CampaignRecipient,
     campaignName: string,
   ): Promise<WaConversation> {
     let conversation = await this.conversations.findOne({
-      where: { workspaceId, contactPhone: contact.phoneE164 },
+      where: { workspaceId, contactPhone: recipient.phoneE164 },
     });
     if (!conversation) {
-      const digits = contact.phoneE164.replace(/^\+/, '');
-      if (digits !== contact.phoneE164) {
+      const digits = recipient.phoneE164.replace(/^\+/, '');
+      if (digits !== recipient.phoneE164) {
         conversation = await this.conversations.findOne({
           where: { workspaceId, contactPhone: digits },
         });
         if (conversation) {
-          conversation.contactPhone = contact.phoneE164;
+          conversation.contactPhone = recipient.phoneE164;
         }
       }
     }
@@ -361,15 +429,17 @@ export class WaCampaignProcessor extends WorkerHost {
     if (!conversation) {
       conversation = this.conversations.create({
         workspaceId,
-        contactId: contact.id,
-        contactPhone: contact.phoneE164,
-        contactName: contact.name,
+        contactId: recipient.id,
+        contactPhone: recipient.phoneE164,
+        contactName: recipient.name,
         unreadCount: 0,
         lastMessageBody: preview,
         lastMessageAt: now,
       });
     } else {
-      if (!conversation.contactId) conversation.contactId = contact.id;
+      if (!conversation.contactId && recipient.id) {
+        conversation.contactId = recipient.id;
+      }
       conversation.lastMessageBody = preview;
       conversation.lastMessageAt = now;
     }
@@ -436,7 +506,11 @@ export class WaCampaignProcessor extends WorkerHost {
         };
       }
       if (metaCode === 131026) {
-        return { code: 131026, reason: 'Message undeliverable', billing: false };
+        return {
+          code: 131026,
+          reason: 'Message undeliverable',
+          billing: false,
+        };
       }
       if (metaCode === 130429) {
         return {
@@ -456,7 +530,9 @@ export class WaCampaignProcessor extends WorkerHost {
       return {
         code: metaCode ?? subcode,
         reason:
-          (resp?.message as string) ?? details?.message ?? 'Meta Graph API error',
+          (resp?.message as string) ??
+          details?.message ??
+          'Meta Graph API error',
         billing: false,
       };
     }

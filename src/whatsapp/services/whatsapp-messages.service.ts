@@ -205,6 +205,16 @@ export class WhatsappMessagesService {
     return { conversations, total: conversations.length };
   }
 
+  async getUnreadCount(workspaceId: string): Promise<{ total: number }> {
+    const total = await this.conversations
+      .createQueryBuilder('c')
+      .where('c.workspace_id = :workspaceId', { workspaceId })
+      .andWhere('c.deleted_at IS NULL')
+      .andWhere('c.unread_count > 0')
+      .getCount();
+    return { total };
+  }
+
   async listMessages(
     workspaceId: string,
     conversationId: string,

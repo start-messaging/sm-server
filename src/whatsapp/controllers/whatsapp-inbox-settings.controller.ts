@@ -28,7 +28,7 @@ export class WhatsappInboxSettingsController {
   @MinRole(WorkspaceRole.AGENT)
   @ApiOperation({
     summary:
-      'Update inbox settings. roundRobinEnabled requires ADMIN+; inboxAvailable is self-serve for AGENT+.',
+      'Update inbox settings. roundRobinEnabled and autoReplyDelaySeconds require ADMIN+; inboxAvailable is self-serve for AGENT+.',
   })
   patch(
     @Param('slug') _slug: string,

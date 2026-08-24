@@ -17,6 +17,7 @@ import { WhatsappQuickRepliesController } from './controllers/whatsapp-quick-rep
 import { WhatsappPipelineStagesController } from './controllers/whatsapp-pipeline-stages.controller';
 import { WhatsappInboxSettingsController } from './controllers/whatsapp-inbox-settings.controller';
 import { WhatsappInboxPresenceController } from './controllers/whatsapp-inbox-presence.controller';
+import { WhatsappAnalyticsController } from './controllers/whatsapp-analytics.controller';
 import { WhatsappRealtimeModule } from './realtime/whatsapp-realtime.module';
 import { PhoneNumber } from './entities/phone-number.entity';
 import { WabaAccount } from './entities/waba-account.entity';
@@ -34,6 +35,9 @@ import { WaPipelineStage } from './entities/wa-pipeline-stage.entity';
 import { WaInboxSettings } from './entities/wa-inbox-settings.entity';
 import { WaAssignmentEvent } from './entities/wa-assignment-event.entity';
 import { WaPipelineStageTemplate } from './entities/wa-pipeline-stage-template.entity';
+import { WaAutoReplyRule } from './auto-replies/wa-auto-reply-rule.entity';
+import { WhatsappAutoRepliesService } from './auto-replies/whatsapp-auto-replies.service';
+import { WhatsappAutoRepliesController } from './auto-replies/whatsapp-auto-replies.controller';
 import { WaWebhookQueueModule } from './queue/wa-webhook-queue.module';
 import { WaCampaignQueueModule } from './queue/wa-campaign-queue.module';
 import { MetaGraphClient } from './services/meta-graph.client';
@@ -54,11 +58,14 @@ import { WhatsappPipelineStagesService } from './services/whatsapp-pipeline-stag
 import { WhatsappInboxSettingsService } from './services/whatsapp-inbox-settings.service';
 import { WhatsappInboxPresenceService } from './services/whatsapp-inbox-presence.service';
 import { WhatsappMediaService } from './services/whatsapp-media.service';
+import { WhatsappAnalyticsService } from './services/whatsapp-analytics.service';
 import { R2UploadService } from '../common/services/r2-upload.service';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
 import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity';
 import { WorkspaceMemberGuard } from '../workspaces/guards/workspace-member.guard';
+import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { RequiresFeatureGuard } from './guards/requires-feature.guard';
 import { Plan } from '../plans/entities/plan.entity';
 import { User } from '../users/entities/user.entity';
 import { PaymentsModule } from '../payments/payments.module';
@@ -88,6 +95,7 @@ import { AdminModule } from '../admin/admin.module';
       WaInboxSettings,
       WaAssignmentEvent,
       WaPipelineStageTemplate,
+      WaAutoReplyRule,
       WorkspaceService,
       Workspace,
       WorkspaceMember,
@@ -99,6 +107,8 @@ import { AdminModule } from '../admin/admin.module';
     WhatsappRealtimeModule,
     PaymentsModule,
     AdminModule,
+    // PlanLimitService: the max_contacts cap on contact create.
+    WorkspacesModule,
   ],
   providers: [
     MetaGraphClient,
@@ -115,12 +125,15 @@ import { AdminModule } from '../admin/admin.module';
     WhatsappQuickRepliesService,
     WhatsappPipelineStagesService,
     WhatsappInboxSettingsService,
+    WhatsappAutoRepliesService,
     AdminInboxOpsService,
     AdminPipelineStageTemplatesService,
     WhatsappMediaService,
     WhatsappInboxPresenceService,
+    WhatsappAnalyticsService,
     R2UploadService,
     WorkspaceMemberGuard,
+    RequiresFeatureGuard,
   ],
   controllers: [
     WhatsappConnectController,
@@ -137,7 +150,9 @@ import { AdminModule } from '../admin/admin.module';
     WhatsappQuickRepliesController,
     WhatsappPipelineStagesController,
     WhatsappInboxSettingsController,
+    WhatsappAutoRepliesController,
     WhatsappInboxPresenceController,
+    WhatsappAnalyticsController,
     AdminInboxOpsController,
     AdminPipelineStageTemplatesController,
   ],

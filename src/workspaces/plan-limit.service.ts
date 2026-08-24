@@ -8,6 +8,7 @@ import {
 } from '../members/entities/workspace-invitation.entity';
 import { Plan } from '../plans/entities/plan.entity';
 import { PLAN_LIMIT_KEYS } from '../plans/plan-keys';
+import { WaContact } from '../whatsapp/entities/wa-contact.entity';
 import {
   MemberStatus,
   WorkspaceMember,
@@ -34,6 +35,8 @@ export class PlanLimitService {
     private readonly members: Repository<WorkspaceMember>,
     @InjectRepository(WorkspaceInvitation)
     private readonly invitations: Repository<WorkspaceInvitation>,
+    @InjectRepository(WaContact)
+    private readonly contacts: Repository<WaContact>,
   ) {}
 
   /**
@@ -165,6 +168,33 @@ export class PlanLimitService {
           code: 'PLAN_LIMIT_REACHED',
           message: `The ${plan.code} plan allows ${maxAgents} agent(s) per workspace`,
           details: { limit: PLAN_LIMIT_KEYS.maxAgents, max: maxAgents },
+        },
+        403,
+      );
+    }
+  }
+
+  /**
+   * `max_contacts` per workspace — the CRM contact book cap (manual create and
+   * CSV import). Counts live (non-soft-deleted) contacts; the check verifies
+   * room for one more. Call inside the insert's transaction, after the
+   * per-workspace advisory lock, so count+insert is race-proof.
+   */
+  async assertCanAddContact(
+    plan: Plan,
+    workspaceId: string,
+    em?: EntityManager,
+  ): Promise<void> {
+    const maxContacts = numLimit(plan, PLAN_LIMIT_KEYS.maxContacts);
+    if (maxContacts === null) return;
+    const repo = em ? em.getRepository(WaContact) : this.contacts;
+    const contacts = await repo.count({ where: { workspaceId } });
+    if (contacts >= maxContacts) {
+      throw new AppException(
+        {
+          code: 'PLAN_LIMIT_REACHED',
+          message: `The ${plan.code} plan allows ${maxContacts} contact(s) per workspace`,
+          details: { limit: PLAN_LIMIT_KEYS.maxContacts, max: maxContacts },
         },
         403,
       );

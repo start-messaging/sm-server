@@ -15,4 +15,12 @@ export class WaInboxSettings extends BaseEntity {
 
   @Column({ name: 'last_routed_user_id', type: 'uuid', nullable: true })
   lastRoutedUserId!: string | null;
+
+  /**
+   * Grace window for keyword auto-replies: an inbound message is not
+   * auto-replied to when a human agent already replied in this conversation
+   * within the last N seconds. 0 = always auto-reply on a keyword match.
+   */
+  @Column({ name: 'auto_reply_delay_seconds', type: 'int', default: 0 })
+  autoReplyDelaySeconds!: number;
 }

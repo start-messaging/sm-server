@@ -7,7 +7,7 @@ This file provides guidance to Claude Code / Cursor when working in **sm-server*
 - Hub: [../.claude/CLAUDE.md](../.claude/CLAUDE.md)
 - WhatsApp plan: [../.claude/plans/whatsapp-deep-build-plan.md](../.claude/plans/whatsapp-deep-build-plan.md)
 - Multitask models: [../.claude/AGENT_MODELS.md](../.claude/AGENT_MODELS.md)
-- Skills: [../.claude/skills/](../.claude/skills/) (mirrored in `../.cursor/skills/`)
+- Skills: [whatsapp-product](../.claude/skills/whatsapp-product/SKILL.md), [cross-repo-feature](../.claude/skills/cross-repo-feature/SKILL.md) — all in [../.claude/skills/](../.claude/skills/) (mirrored in `../.cursor/skills/`)
 
 **Product:** WhatsApp CRM API for `whatsapp.startmessaging.com`. Meta **Tech Provider** — Meta bills conversations; we bill CRM SaaS (Razorpay). Do **not** debit wallet on send. SMS product lives in sibling `server/` — keep separate. Sibling UIs: `sm-client`, `sm-admin`.
 
@@ -139,16 +139,17 @@ request passes, in order:
      `pg_advisory_xact_lock` so concurrent requests can't race past the cap.
      `src/workspaces/plan-limit.service.ts` is the template for every future
      quota. Over the cap → 403 `PLAN_LIMIT_REACHED` + `details:{limit, max}`.
-   - **Features (boolean gates)**: enforced by a `@RequiresFeature('key')`
-     controller guard placed AFTER `WorkspaceMemberGuard` (the plan is already
-     on `req.workspaceCtx` — no extra query). **NOT BUILT YET — intentionally**:
-     no feature-gated endpoint exists today. Build the guard together with the
-     FIRST such endpoint (e.g. campaigns); never ship a feature-bearing endpoint
-     without it.
+   - **Features (boolean gates)**: enforced by `@RequiresFeature('key')` +
+     `RequiresFeatureGuard` (`src/whatsapp/guards/`), placed AFTER
+     `WorkspaceMemberGuard` in `@UseGuards` (the plan is already on
+     `req.workspaceCtx` — no extra query). Over the gate → 403
+     `PLAN_FEATURE_REQUIRED` + `details:{feature, currentPlan}`. Never ship a
+     feature-bearing endpoint without it.
 
 ### Checklist — making an entitlement key actionable (in this order)
 
-1. Register the key in `src/plans/plan-keys.ts` (limits). The server enforces
+1. Register the key in `src/plans/plan-keys.ts` (`PLAN_LIMIT_KEYS` /
+   `PLAN_FEATURE_KEYS`). The server enforces
    ONLY registered keys; unregistered keys are display data that flow to the
    client untouched.
 2. Add the server check: a `PlanLimitService.assertCan…` (count + advisory

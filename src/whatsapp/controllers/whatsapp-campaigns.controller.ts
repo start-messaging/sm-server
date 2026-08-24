@@ -13,13 +13,17 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
 import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.guard';
+import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
+import { RequiresFeature } from '../guards/requires-feature.decorator';
+import { RequiresFeatureGuard } from '../guards/requires-feature.guard';
 import { WhatsappCampaignsService } from '../services/whatsapp-campaigns.service';
 import { WhatsappConnectService } from '../services/whatsapp-connect.service';
 import { CreateCampaignDto, UpdateCampaignDto } from '../dto/campaign.dto';
+import { CampaignAudienceCsvDto } from '../dto/campaign-audience-csv.dto';
 
 @ApiTags('whatsapp-campaigns')
 @Controller({ path: 'workspaces/:slug/whatsapp/campaigns', version: '1' })
-@UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
+@UseGuards(JwtAuthGuard, WorkspaceMemberGuard, RequiresFeatureGuard)
 @ApiBearerAuth()
 export class WhatsappCampaignsController {
   constructor(
@@ -56,6 +60,38 @@ export class WhatsappCampaignsController {
     return this.campaignsService.create(ctx.workspace.id, dto);
   }
 
+  @Post(':id/duplicate')
+  @ApiOperation({ summary: 'Duplicate campaign' })
+  duplicate(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.campaignsService.duplicate(ctx.workspace.id, id);
+  }
+
+  @Get(':id/analytics')
+  @RequiresFeature(PLAN_FEATURE_KEYS.campaignAnalytics)
+  @ApiOperation({ summary: 'Get campaign analytics' })
+  analytics(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.campaignsService.analytics(ctx.workspace.id, id);
+  }
+
+  @Post(':id/audience-csv')
+  @ApiOperation({ summary: 'Upload a CSV audience for a campaign' })
+  uploadAudienceCsv(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @Body() dto: CampaignAudienceCsvDto,
+  ) {
+    return this.campaignsService.setAudienceCsv(ctx.workspace.id, id, dto.rows);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update campaign' })
   update(
@@ -78,16 +114,15 @@ export class WhatsappCampaignsController {
   }
 
   @Post(':id/launch')
+  @RequiresFeature(PLAN_FEATURE_KEYS.waCampaigns)
   @ApiOperation({ summary: 'Launch campaign' })
   async launch(
     @Param('slug') _slug: string,
     @Param('id') id: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
   ) {
-    const planFeatures = ctx.workspace.plan?.features;
     const connStatus = await this.connectService.getStatus(ctx.workspace.id);
     return this.campaignsService.launch(ctx.workspace.id, id, {
-      planFeatures,
       metaPaymentReady: connStatus.metaPaymentReady,
     });
   }

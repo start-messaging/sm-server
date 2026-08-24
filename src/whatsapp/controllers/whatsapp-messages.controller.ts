@@ -25,6 +25,9 @@ import { MinRole } from '../../workspaces/decorators/min-role.decorator';
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
 import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.guard';
 import { WorkspaceRole } from '../../workspaces/entities/workspace-member.entity';
+import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
+import { RequiresFeature } from '../guards/requires-feature.decorator';
+import { RequiresFeatureGuard } from '../guards/requires-feature.guard';
 import {
   WhatsappMessagesService,
   ConversationTab,
@@ -44,7 +47,7 @@ const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 @ApiTags('whatsapp-messages')
 @Controller({ path: 'workspaces/:slug/whatsapp/conversations', version: '1' })
-@UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
+@UseGuards(JwtAuthGuard, WorkspaceMemberGuard, RequiresFeatureGuard)
 @ApiBearerAuth()
 export class WhatsappMessagesController {
   constructor(
@@ -54,6 +57,7 @@ export class WhatsappMessagesController {
 
   @Post()
   @MinRole(WorkspaceRole.AGENT)
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
   @ApiOperation({ summary: 'Create or get conversation by phone number' })
   createOrGetConversation(
     @Param('slug') _slug: string,
@@ -68,6 +72,7 @@ export class WhatsappMessagesController {
   }
 
   @Get()
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
   @ApiOperation({ summary: 'List conversations (inbox)' })
   listConversations(
     @Param('slug') _slug: string,
@@ -95,7 +100,17 @@ export class WhatsappMessagesController {
     );
   }
 
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Count conversations with unread messages' })
+  getUnreadCount(
+    @Param('slug') _slug: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.messagesService.getUnreadCount(ctx.workspace.id);
+  }
+
   @Get(':conversationId/assignment-events')
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
   @ApiOperation({
     summary: 'List assignment events for a conversation (oldest → newest)',
   })
@@ -112,6 +127,7 @@ export class WhatsappMessagesController {
   }
 
   @Get(':conversationId/messages')
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
   @ApiOperation({ summary: 'List messages in a conversation' })
   listMessages(
     @Param('slug') _slug: string,
@@ -127,6 +143,7 @@ export class WhatsappMessagesController {
 
   @Post(':conversationId/messages')
   @MinRole(WorkspaceRole.AGENT)
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
   @ApiOperation({ summary: 'Send a message (text or template)' })
   sendMessage(
     @Param('slug') _slug: string,
@@ -143,6 +160,7 @@ export class WhatsappMessagesController {
 
   @Post(':conversationId/media')
   @MinRole(WorkspaceRole.AGENT)
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
   @ApiOperation({
     summary:
       'Upload and send a media message (image / audio / video / document)',
@@ -188,6 +206,7 @@ export class WhatsappMessagesController {
   }
 
   @Patch(':conversationId')
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
   @ApiOperation({
     summary: 'Patch conversation (assign/claim/resolve/mark-read)',
   })

@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import { Column, Entity, Index } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 
@@ -30,6 +31,7 @@ export class User extends BaseEntity {
   emailVerified!: boolean;
 
   /** Argon2id hash. Null only for invited-but-not-yet-accepted users (future slice). */
+  @Exclude()
   @Column({ type: 'varchar', nullable: true })
   passwordHash!: string | null;
 

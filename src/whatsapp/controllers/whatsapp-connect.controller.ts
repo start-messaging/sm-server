@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  ClassSerializerInterceptor,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ApiErrorResponse } from '../../common/swagger/api-error-response.decorator';
@@ -10,6 +19,7 @@ import { RegisterPhoneDto } from '../dto/register-phone.dto';
 import { WhatsappConnectService } from '../services/whatsapp-connect.service';
 
 @ApiTags('whatsapp')
+@UseInterceptors(ClassSerializerInterceptor)
 @Controller({ path: 'workspaces/:slug/whatsapp', version: '1' })
 export class WhatsappConnectController {
   constructor(private readonly connect: WhatsappConnectService) {}

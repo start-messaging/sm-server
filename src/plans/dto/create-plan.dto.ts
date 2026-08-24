@@ -16,7 +16,7 @@ import { IsPlanFeatures, IsPlanLimits } from './plan-records.validator';
 
 export class CreatePlanDto {
   /**
-   * Stable identifier ('FREE', 'STARTER'…). IMMUTABLE after creation — plan
+   * Stable identifier ('FREE', 'BASIC', 'ADVANCED'…). IMMUTABLE after creation — plan
    * limits count existing workspaces by code, so renaming a code would
    * silently change what users are entitled to.
    */

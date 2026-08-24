@@ -78,6 +78,21 @@ export class TemplateComponentDto {
   @IsIn(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'])
   format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
 
+  /**
+   * HEADER format IMAGE/VIDEO/DOCUMENT only: publicly-accessible media URL,
+   * passed through to the Graph API unchanged. Customer hosts the media —
+   * we do not upload or proxy it.
+   *
+   * OPEN ISSUE: Meta's real Template Creation API for media headers expects
+   * an uploaded media handle in `example.header_handle` (via the Resumable
+   * Upload API), not a bare URL on the component. This field is wired
+   * through as specified by the plan; whether Meta's Graph API accepts it
+   * as-is is unverified.
+   */
+  @IsOptional()
+  @IsString()
+  link?: string;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => TemplateComponentExampleDto)

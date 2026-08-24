@@ -13,6 +13,9 @@ import {
   WorkspaceMemberGuard,
   type WorkspaceContext,
 } from '../../workspaces/guards/workspace-member.guard';
+import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
+import { RequiresFeature } from '../guards/requires-feature.decorator';
+import { RequiresFeatureGuard } from '../guards/requires-feature.guard';
 import { InboxRealtimeService } from '../realtime/inbox-realtime.service';
 
 /**
@@ -24,7 +27,8 @@ import { InboxRealtimeService } from '../realtime/inbox-realtime.service';
  */
 @ApiTags('whatsapp-inbox-events')
 @Controller({ path: 'workspaces/:slug/whatsapp', version: '1' })
-@UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
+@UseGuards(JwtAuthGuard, WorkspaceMemberGuard, RequiresFeatureGuard)
+@RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
 @ApiBearerAuth()
 export class WhatsappInboxEventsController {
   constructor(private readonly realtime: InboxRealtimeService) {}

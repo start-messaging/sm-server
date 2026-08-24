@@ -249,7 +249,7 @@ export function sanitizeButtonComponents(
 ): TemplateComponent[] {
   return components.flatMap((c) => {
     if (c.type !== 'BUTTONS') {
-      return [c as unknown as TemplateComponent];
+      return [c];
     }
     const raw = c.buttons ?? [];
     if (raw.length === 0) return [];

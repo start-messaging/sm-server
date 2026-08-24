@@ -150,7 +150,7 @@ const RATES: Array<Partial<ServiceCountryRate>> = [
 ];
 
 // The permanent FREE plan (docs part-5 §21) — NOT a trial: trial_days 0, no
-// expiry. Paid tiers (STARTER/GROWTH/BUSINESS) arrive with the billing slice.
+// expiry. Paid tiers (BASIC/ADVANCED/etc) arrive with the billing slice.
 // serviceKey null = the global fallback; service-specific FREE rows (e.g. an
 // SMS FREE with sender-id keys) are added as DATA when a service needs one.
 // features/limits are OPEN key-value sets: add keys freely — the server only
@@ -164,40 +164,62 @@ const PLANS: Array<Partial<Plan>> = [
     trialDays: 0,
     status: PlanStatus.ACTIVE,
     features: {
+      wa_campaigns: false,
+      campaign_analytics: false,
+      agent_inbox: false,
+      api_access: false,
+      keyword_autoreplies: false,
+      support_level: 'community',
+    },
+    limits: {
+      max_workspaces_per_service: 1,
+      max_members: 2,
+      max_agents: 1,
+      max_contacts: 200,
+    },
+  },
+  {
+    code: 'BASIC',
+    serviceKey: 'whatsapp',
+    name: 'Basic',
+    tier: 1,
+    trialDays: 0,
+    status: PlanStatus.ACTIVE,
+    features: {
       wa_campaigns: true,
       campaign_analytics: false,
       agent_inbox: true,
       api_access: false,
+      keyword_autoreplies: false,
       support_level: 'email_bh',
     },
     limits: {
       max_workspaces_per_service: 1,
-      max_agents: 1,
       max_members: 5,
-      history_retention_days: 30,
-      max_contacts: 1000,
+      max_agents: 3,
+      max_contacts: 5000,
     },
   },
   {
-    code: 'STARTER',
+    code: 'ADVANCED',
     serviceKey: 'whatsapp',
-    name: 'Starter',
-    tier: 1,
-    trialDays: 14,
+    name: 'Advanced',
+    tier: 2,
+    trialDays: 0,
     status: PlanStatus.ACTIVE,
     features: {
       wa_campaigns: true,
       campaign_analytics: true,
       agent_inbox: true,
-      api_access: false,
+      api_access: true,
+      keyword_autoreplies: true,
       support_level: 'email_priority',
     },
     limits: {
-      max_workspaces_per_service: 2,
-      max_agents: 3,
-      max_members: 10,
-      history_retention_days: 90,
-      max_contacts: 10000,
+      max_workspaces_per_service: null,
+      max_members: null,
+      max_agents: null,
+      max_contacts: null,
     },
   },
 ];

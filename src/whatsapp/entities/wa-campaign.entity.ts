@@ -17,6 +17,13 @@ export interface CampaignStats {
   failed: number;
 }
 
+/** One validated row from a campaign's "Upload CSV" audience step. */
+export interface CampaignAudienceCsvEntry {
+  phoneE164: string;
+  name?: string;
+  attrs?: Record<string, string>;
+}
+
 @Index('idx_wa_campaigns_workspace', ['workspaceId'])
 @Index('idx_wa_campaigns_status', ['workspaceId', 'status'])
 @Entity({ name: 'wa_campaigns' })
@@ -39,6 +46,10 @@ export class WaCampaign extends BaseEntity {
   /** Contact IDs or segment identifiers for the audience. */
   @Column({ name: 'audience_ids', type: 'jsonb', default: '[]' })
   audienceIds!: string[];
+
+  /** Validated rows from the "Upload CSV" audience step; sent alongside audienceIds. */
+  @Column({ name: 'audience_csv', type: 'jsonb', default: '[]' })
+  audienceCsv!: CampaignAudienceCsvEntry[];
 
   @Column({ name: 'scheduled_at', type: 'timestamptz', nullable: true })
   scheduledAt!: Date | null;

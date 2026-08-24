@@ -25,6 +25,7 @@ export class WhatsappInboxSettingsService {
         workspaceId,
         roundRobinEnabled: false,
         lastRoutedUserId: null,
+        autoReplyDelaySeconds: 0,
       });
       await this.settings.save(row);
     }
@@ -39,7 +40,11 @@ export class WhatsappInboxSettingsService {
   async patch(
     workspaceId: string,
     callerMembership: WorkspaceMember,
-    input: { roundRobinEnabled?: boolean; inboxAvailable?: boolean },
+    input: {
+      roundRobinEnabled?: boolean;
+      inboxAvailable?: boolean;
+      autoReplyDelaySeconds?: number;
+    },
   ) {
     const isAdmin =
       ROLE_RANK[callerMembership.role] >= ROLE_RANK[WorkspaceRole.ADMIN];
@@ -54,16 +59,30 @@ export class WhatsappInboxSettingsService {
       );
     }
 
+    if (input.autoReplyDelaySeconds !== undefined && !isAdmin) {
+      throw new AppException(
+        {
+          code: 'WORKSPACE_ROLE_FORBIDDEN',
+          message: 'Only admins can change auto-reply settings',
+        },
+        403,
+      );
+    }
+
     let row = await this.settings.findOne({ where: { workspaceId } });
     if (!row) {
       row = this.settings.create({
         workspaceId,
         roundRobinEnabled: false,
         lastRoutedUserId: null,
+        autoReplyDelaySeconds: 0,
       });
     }
     if (input.roundRobinEnabled !== undefined) {
       row.roundRobinEnabled = input.roundRobinEnabled;
+    }
+    if (input.autoReplyDelaySeconds !== undefined) {
+      row.autoReplyDelaySeconds = input.autoReplyDelaySeconds;
     }
     await this.settings.save(row);
 
@@ -84,6 +103,7 @@ export class WhatsappInboxSettingsService {
       workspaceId: s.workspaceId,
       roundRobinEnabled: s.roundRobinEnabled,
       lastRoutedUserId: s.lastRoutedUserId,
+      autoReplyDelaySeconds: s.autoReplyDelaySeconds,
       inboxAvailable,
     };
   }

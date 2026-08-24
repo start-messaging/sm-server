@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class PatchInboxSettingsDto {
   /** ADMIN+ only; controls workspace-wide round-robin routing. */
@@ -13,4 +13,14 @@ export class PatchInboxSettingsDto {
   @IsOptional()
   @IsBoolean()
   inboxAvailable?: boolean;
+
+  /**
+   * ADMIN+ only; suppresses a keyword auto-reply when a human agent replied in
+   * the conversation within this many seconds. 0 disables the grace window.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(86400)
+  autoReplyDelaySeconds?: number;
 }
