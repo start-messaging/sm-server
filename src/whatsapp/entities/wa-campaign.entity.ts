@@ -76,4 +76,12 @@ export class WaCampaign extends BaseEntity {
     default: '{"total":0,"sent":0,"delivered":0,"read":0,"failed":0}',
   })
   stats!: CampaignStats;
+
+  /**
+   * Recipients the send loop skipped because they had opted out. Reported
+   * separately from `stats.failed` — a skip is compliance, not a delivery
+   * failure.
+   */
+  @Column({ name: 'skipped_opted_out', type: 'int', default: 0 })
+  skippedOptedOut!: number;
 }

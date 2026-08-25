@@ -38,6 +38,7 @@ import {
   SendMessageInput,
 } from '../services/whatsapp-send.service';
 import { SendMessageDto } from '../dto/send-message.dto';
+import { SendInteractiveDto } from '../dto/send-interactive.dto';
 import { CreateConversationDto } from '../dto/create-conversation.dto';
 import { PatchConversationDto } from '../dto/patch-conversation.dto';
 import { WA_ERR } from '../whatsapp-error-codes';
@@ -155,6 +156,7 @@ export class WhatsappMessagesController {
       ctx.workspace.id,
       conversationId,
       dto as SendMessageInput,
+      { bypassOptOutGate: true },
     );
   }
 
@@ -196,13 +198,35 @@ export class WhatsappMessagesController {
         400,
       );
     }
-    return this.sendService.send(ctx.workspace.id, conversationId, {
-      type: mediaType,
-      buffer: file.buffer,
-      mimeType,
-      filename: file.originalname ?? 'upload',
-      caption: caption?.trim() || undefined,
-    } satisfies SendMessageInput);
+    return this.sendService.send(
+      ctx.workspace.id,
+      conversationId,
+      {
+        type: mediaType,
+        buffer: file.buffer,
+        mimeType,
+        filename: file.originalname ?? 'upload',
+        caption: caption?.trim() || undefined,
+      } satisfies SendMessageInput,
+      { bypassOptOutGate: true },
+    );
+  }
+
+  @Post(':conversationId/interactive')
+  @MinRole(WorkspaceRole.AGENT)
+  @RequiresFeature(PLAN_FEATURE_KEYS.interactiveMessages)
+  @ApiOperation({ summary: 'Send an interactive (button or list) message' })
+  sendInteractive(
+    @Param('slug') _slug: string,
+    @Param('conversationId') conversationId: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @Body() dto: SendInteractiveDto,
+  ) {
+    return this.sendService.sendInteractive(
+      ctx.workspace.id,
+      conversationId,
+      dto,
+    );
   }
 
   @Patch(':conversationId')

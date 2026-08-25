@@ -11,18 +11,59 @@ export type TemplateStatus =
 
 export type TemplateCategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
 
+/**
+ * Which advanced template family this row belongs to. Derived from the
+ * submitted payload on create and re-derived from Meta's `components` on sync,
+ * so it stays correct even for templates authored in WhatsApp Manager.
+ */
+export type TemplateSubtype =
+  | 'standard'
+  | 'lto'
+  | 'authentication'
+  | 'carousel';
+
+export type TemplateButtonType =
+  | 'QUICK_REPLY'
+  | 'URL'
+  | 'PHONE_NUMBER'
+  | 'COPY_CODE'
+  | 'REQUEST_CONTACT_INFO'
+  | 'OTP';
+
 /** One button inside a BUTTONS component (Graph create payload). */
 export interface TemplateButton {
-  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
-  text: string;
+  type: TemplateButtonType;
+  /** Absent for COPY_CODE / REQUEST_CONTACT_INFO — Meta fixes those labels. */
+  text?: string;
   url?: string;
-  /** URL {{1}} sample — the variable suffix only, e.g. `summer2023`. */
-  example?: string[];
+  /**
+   * URL: the {{1}} suffix sample only, e.g. `["summer2023"]`.
+   * COPY_CODE: the coupon sample as a bare string, e.g. `"250FF"`.
+   */
+  example?: string | string[];
   phone_number?: string;
+  /** OTP buttons (authentication templates) only. */
+  otp_type?: 'ONE_TAP' | 'COPY_CODE' | 'ZERO_TAP';
+  autofill_text?: string;
+  /** ONE_TAP / ZERO_TAP: the Android app allowed to autofill the code. */
+  supported_apps?: Array<{ package_name: string; signature_hash: string }>;
+}
+
+export type TemplateComponentType =
+  | 'HEADER'
+  | 'BODY'
+  | 'FOOTER'
+  | 'BUTTONS'
+  | 'LIMITED_TIME_OFFER'
+  | 'CAROUSEL';
+
+/** One card of a CAROUSEL component — its own mini component tree. */
+export interface TemplateCarouselCard {
+  components: TemplateComponent[];
 }
 
 export interface TemplateComponent {
-  type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
+  type: TemplateComponentType;
   text?: string;
   format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
   /**
@@ -35,9 +76,19 @@ export interface TemplateComponent {
   example?: {
     body_text?: string[][];
     header_text?: string[];
+    /** Media header / carousel card header: uploaded asset handle. */
+    header_handle?: string[];
   };
   /** BUTTONS component only. */
   buttons?: TemplateButton[];
+  /** LIMITED_TIME_OFFER component only. */
+  limited_time_offer?: { text: string; has_expiration?: boolean };
+  /** CAROUSEL component only — 2–10 cards, fixed at creation time. */
+  cards?: TemplateCarouselCard[];
+  /** AUTHENTICATION BODY only: appends Meta's "do not share this code" line. */
+  add_security_recommendation?: boolean;
+  /** AUTHENTICATION FOOTER only: appends Meta's code-expiry warning. */
+  code_expiration_minutes?: number;
 }
 
 @Index('idx_wa_templates_waba', ['wabaAccountId'])
@@ -123,4 +174,37 @@ export class WaTemplate extends BaseEntity {
     nullable: true,
   })
   qualityScore!: string | null;
+
+  /**
+   * Denormalised `buttons.length > 0` so list views can badge templates
+   * without deserialising the components tree.
+   */
+  @Column({ name: 'has_buttons', type: 'boolean', default: false })
+  hasButtons!: boolean;
+
+  /**
+   * Message-level buttons, lifted out of the BUTTONS component so the client
+   * and the send path do not have to walk `components`. Carousel per-card
+   * buttons stay inside `components[].cards[]`.
+   */
+  @Column({ name: 'buttons', type: 'jsonb', nullable: true })
+  buttons!: TemplateButton[] | null;
+
+  @Column({
+    name: 'template_subtype',
+    type: 'varchar',
+    length: 20,
+    default: 'standard',
+  })
+  templateSubtype!: TemplateSubtype;
+
+  @Column({ name: 'is_carousel', type: 'boolean', default: false })
+  isCarousel!: boolean;
+
+  /**
+   * Card count Meta approved. Fixed at creation — an approved 3-card carousel
+   * can only ever be sent with exactly 3 cards.
+   */
+  @Column({ name: 'carousel_card_count', type: 'int', nullable: true })
+  carouselCardCount!: number | null;
 }

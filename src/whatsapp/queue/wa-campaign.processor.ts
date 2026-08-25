@@ -34,6 +34,8 @@ interface CampaignRecipient {
   phoneE164: string;
   name: string | null;
   attributes: Record<string, unknown>;
+  /** CSV rows with no matching contact row have never opted out. */
+  optedIn: boolean;
 }
 
 const BATCH_SIZE = 50;
@@ -109,7 +111,14 @@ export class WaCampaignProcessor extends WorkerHost {
       campaign.templateLanguage,
     );
 
-    campaign.stats = { ...campaign.stats, total: recipients.length };
+    // `total` counts addressable recipients only; opted-out ones are reported
+    // through `skippedOptedOut`. Recounted from zero on every run (including a
+    // resume) because the full recipient list is re-walked each time.
+    campaign.stats = {
+      ...campaign.stats,
+      total: recipients.filter((r) => r.optedIn).length,
+    };
+    campaign.skippedOptedOut = 0;
     await this.persistProgress(campaign);
 
     for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
@@ -130,6 +139,12 @@ export class WaCampaignProcessor extends WorkerHost {
           alreadySentPhones.has(recipient.phoneE164) ||
           alreadySentPhones.has(recipient.phoneE164.replace(/^\+/, ''))
         ) {
+          continue;
+        }
+
+        // Compliance skip, never a failure — no send attempt, no failed row.
+        if (!recipient.optedIn) {
+          campaign.skippedOptedOut += 1;
           continue;
         }
 
@@ -330,11 +345,11 @@ export class WaCampaignProcessor extends WorkerHost {
   }
 
   /**
-   * Unified send targets for a campaign: `audienceIds` contacts (must still
-   * be opted-in) plus validated `audienceCsv` rows (Track 5c — already
-   * opt-out-filtered on upload, but re-checked here in case a matching
-   * contact opted out afterwards). Deduped by phone, contacts win over CSV
-   * rows for the same number so a real contact record + id is preferred.
+   * Unified send targets for a campaign: `audienceIds` contacts plus validated
+   * `audienceCsv` rows (Track 5c). Opted-out targets are carried through rather
+   * than dropped here, so the send loop can count them into
+   * `campaign.skippedOptedOut`. Deduped by phone, contacts win over CSV rows
+   * for the same number so a real contact record + id is preferred.
    */
   private async buildRecipients(
     campaign: WaCampaign,
@@ -342,7 +357,7 @@ export class WaCampaignProcessor extends WorkerHost {
   ): Promise<CampaignRecipient[]> {
     const audienceContacts = campaign.audienceIds.length
       ? await this.contacts.find({
-          where: { id: In(campaign.audienceIds), workspaceId, optedIn: true },
+          where: { id: In(campaign.audienceIds), workspaceId },
         })
       : [];
 
@@ -370,19 +385,20 @@ export class WaCampaignProcessor extends WorkerHost {
         phoneE164: contact.phoneE164,
         name: contact.name,
         attributes: contact.attributes,
+        optedIn: contact.optedIn,
       });
     }
 
     for (const entry of csvEntries) {
       if (seenPhones.has(entry.phoneE164)) continue;
       const matched = matchByPhone.get(entry.phoneE164);
-      if (matched && !matched.optedIn) continue;
       seenPhones.add(entry.phoneE164);
       recipients.push({
         id: matched?.id ?? null,
         phoneE164: entry.phoneE164,
         name: entry.name ?? matched?.name ?? null,
         attributes: entry.attrs ?? matched?.attributes ?? {},
+        optedIn: matched?.optedIn ?? true,
       });
     }
 
@@ -469,7 +485,7 @@ export class WaCampaignProcessor extends WorkerHost {
   }
 
   /**
-   * Write this worker's sent/failed/total onto a freshly loaded row so
+   * Write this worker's sent/failed/total/skipped onto a freshly loaded row so
    * webhook-delivered/read counters are not clobbered.
    */
   private async persistProgress(
@@ -485,6 +501,7 @@ export class WaCampaignProcessor extends WorkerHost {
       sent: campaign.stats.sent,
       failed: campaign.stats.failed,
     };
+    latest.skippedOptedOut = campaign.skippedOptedOut;
     await this.campaigns.save(latest);
     campaign.stats = latest.stats;
     return latest.status === 'PAUSED' ? 'paused' : 'ok';

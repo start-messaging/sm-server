@@ -256,6 +256,21 @@ export class MetaGraphClient {
 
   // ── Messaging ───────────────────────────────────────────────────────────
 
+  /** POST /{phoneNumberId}/messages — send interactive (button/list) message. */
+  async sendInteractiveMessage(
+    phoneNumberId: string,
+    to: string,
+    interactive: MetaInteractivePayload,
+    accessToken: string,
+  ): Promise<MetaSendMessageResult> {
+    const url = `${GRAPH_BASE}/${this.version}/${phoneNumberId}/messages`;
+    return this.post<MetaSendMessageResult>(
+      url,
+      { messaging_product: 'whatsapp', to, type: 'interactive', interactive },
+      accessToken,
+    );
+  }
+
   /** POST /{phoneNumberId}/messages — send text or template message. */
   async sendMessage(
     phoneNumberId: string,
@@ -427,4 +442,24 @@ export interface MetaSendMessageResult {
   messaging_product: string;
   contacts: Array<{ input: string; wa_id: string }>;
   messages: Array<{ id: string }>;
+}
+
+export interface MetaInteractivePayload {
+  type: 'button' | 'list';
+  body: { text: string };
+  header?:
+    | { type: 'text'; text: string }
+    | { type: 'image' | 'video' | 'document'; [key: string]: unknown };
+  footer?: { text: string };
+  action:
+    | {
+        buttons: Array<{ type: 'reply'; reply: { id: string; title: string } }>;
+      }
+    | {
+        button: string;
+        sections: Array<{
+          title?: string;
+          rows: Array<{ id: string; title: string; description?: string }>;
+        }>;
+      };
 }

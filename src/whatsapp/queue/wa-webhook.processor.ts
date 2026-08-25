@@ -56,10 +56,37 @@ import { WhatsappSendService } from '../services/whatsapp-send.service';
 import { WhatsappAutoRepliesService } from '../auto-replies/whatsapp-auto-replies.service';
 import { Workspace } from '../../workspaces/entities/workspace.entity';
 import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
+import { WaFlow, FlowNode } from '../entities/wa-flow.entity';
+import { WaFlowSession } from '../entities/wa-flow-session.entity';
 
 export interface WaWebhookJobData {
   eventId: string;
 }
+
+interface ReplyContext {
+  text?: string;
+  buttonId?: string;
+  listRowId?: string;
+}
+
+/** Inbound keywords that revoke consent. Compared trimmed + upper-cased. */
+const OPT_OUT_KEYWORDS = new Set([
+  'STOP',
+  'UNSUBSCRIBE',
+  'OPT OUT',
+  'OPTOUT',
+  'CANCEL',
+  'रुको',
+  'بند',
+]);
+
+/** Inbound keywords that restore consent. Compared trimmed + upper-cased. */
+const OPT_IN_KEYWORDS = new Set(['START', 'SUBSCRIBE', 'OPT IN', 'OPTIN']);
+
+const OPT_OUT_CONFIRMATION =
+  "You've been unsubscribed. Reply START to opt back in.";
+
+const OPT_IN_CONFIRMATION = "You're subscribed again.";
 
 @Processor(WA_WEBHOOK_QUEUE)
 export class WaWebhookProcessor extends WorkerHost {
@@ -90,6 +117,10 @@ export class WaWebhookProcessor extends WorkerHost {
     private readonly campaigns: Repository<WaCampaign>,
     @InjectRepository(Workspace)
     private readonly workspaces: Repository<Workspace>,
+    @InjectRepository(WaFlow)
+    private readonly flowRepo: Repository<WaFlow>,
+    @InjectRepository(WaFlowSession)
+    private readonly sessionRepo: Repository<WaFlowSession>,
     private readonly inboxRealtime: InboxRealtimeService,
     private readonly mediaService: WhatsappMediaService,
     private readonly sendService: WhatsappSendService,
@@ -274,8 +305,7 @@ export class WaWebhookProcessor extends WorkerHost {
       for (const change of changes) {
         const value = change.value ?? {};
         const decision = value['decision'] as string | undefined;
-        const metaWabaId =
-          (value['waba_id'] as string | undefined) ?? entry.id;
+        const metaWabaId = (value['waba_id'] as string | undefined) ?? entry.id;
 
         if (!metaWabaId || !decision) continue;
 
@@ -311,8 +341,7 @@ export class WaWebhookProcessor extends WorkerHost {
       for (const change of changes) {
         const value = change.value ?? {};
         const alertType = value['alert_type'] as string | undefined;
-        const metaWabaId =
-          (value['waba_id'] as string | undefined) ?? entry.id;
+        const metaWabaId = (value['waba_id'] as string | undefined) ?? entry.id;
 
         if (!metaWabaId) continue;
 
@@ -323,14 +352,23 @@ export class WaWebhookProcessor extends WorkerHost {
 
         // OBA grants/revocations
         if (alertType === 'BUSINESS_INITIATED_MESSAGING_REESTABLISHED') {
-          await this.wabaAccounts.update({ metaWabaId }, { isOfficialBusiness: true });
+          await this.wabaAccounts.update(
+            { metaWabaId },
+            { isOfficialBusiness: true },
+          );
         } else if (alertType === 'BUSINESS_INITIATED_MESSAGING_DISRUPTED') {
-          await this.wabaAccounts.update({ metaWabaId }, { isOfficialBusiness: false });
+          await this.wabaAccounts.update(
+            { metaWabaId },
+            { isOfficialBusiness: false },
+          );
         }
 
         // Payment failures signal no valid payment method
         if (alertType === 'PAYMENT_ISSUE') {
-          await this.wabaAccounts.update({ metaWabaId }, { metaPaymentReady: false });
+          await this.wabaAccounts.update(
+            { metaWabaId },
+            { metaPaymentReady: false },
+          );
         }
       }
     }
@@ -354,8 +392,7 @@ export class WaWebhookProcessor extends WorkerHost {
       for (const change of changes) {
         const value = change.value ?? {};
         const rawLimit = value['max_daily_conversations_per_business'];
-        const metaWabaId =
-          (value['waba_id'] as string | undefined) ?? entry.id;
+        const metaWabaId = (value['waba_id'] as string | undefined) ?? entry.id;
 
         if (!metaWabaId) continue;
 
@@ -405,8 +442,7 @@ export class WaWebhookProcessor extends WorkerHost {
       const changes = entry.changes ?? [];
       for (const change of changes) {
         const value = change.value ?? {};
-        const metaWabaId =
-          (value['waba_id'] as string | undefined) ?? entry.id;
+        const metaWabaId = (value['waba_id'] as string | undefined) ?? entry.id;
         const eventType = value['event'] as string | undefined;
 
         if (!metaWabaId) continue;
@@ -426,7 +462,10 @@ export class WaWebhookProcessor extends WorkerHost {
         );
 
         if (paymentReady !== null) {
-          await this.wabaAccounts.update({ metaWabaId }, { metaPaymentReady: paymentReady });
+          await this.wabaAccounts.update(
+            { metaWabaId },
+            { metaPaymentReady: paymentReady },
+          );
         }
       }
     }
@@ -467,7 +506,10 @@ export class WaWebhookProcessor extends WorkerHost {
         if (metaPhoneNumberId) {
           await this.phoneNumbers.update(
             { metaPhoneNumberId },
-            { displayNameStatus: decision.toUpperCase(), statusSyncedAt: new Date() },
+            {
+              displayNameStatus: decision.toUpperCase(),
+              statusSyncedAt: new Date(),
+            },
           );
         }
       }
@@ -518,7 +560,8 @@ export class WaWebhookProcessor extends WorkerHost {
         );
 
         const update: Record<string, unknown> = {};
-        if (newQualityScore) update['qualityScore'] = newQualityScore.toUpperCase();
+        if (newQualityScore)
+          update['qualityScore'] = newQualityScore.toUpperCase();
         if (templateStatus) {
           const mapped = this.mapMetaTemplateStatus(templateStatus);
           if (mapped) update['status'] = mapped;
@@ -638,25 +681,6 @@ export class WaWebhookProcessor extends WorkerHost {
             contactName,
           );
 
-          // STOP / UNSUBSCRIBE / CANCEL / STOPALL → opt-out
-          const STOP_KEYWORDS = new Set([
-            'STOP',
-            'UNSUBSCRIBE',
-            'CANCEL',
-            'STOPALL',
-          ]);
-          if (
-            textBody &&
-            STOP_KEYWORDS.has(textBody.trim().toUpperCase()) &&
-            contact.optedIn
-          ) {
-            contact.optedIn = false;
-            await this.contacts.save(contact);
-            this.logger.log(
-              `contact ${contact.id} opted out (keyword: ${textBody.trim()})`,
-            );
-          }
-
           let conversation = await this.findConversationForInbound(
             workspaceId,
             contactPhone,
@@ -703,6 +727,40 @@ export class WaWebhookProcessor extends WorkerHost {
               msgType === MetaInboundMessageType.DOCUMENT ||
               msgType === MetaInboundMessageType.STICKER;
 
+            const isInteractive =
+              msgType === MetaInboundMessageType.INTERACTIVE;
+
+            let interactiveData:
+              | import('../entities/wa-message.entity').InteractiveData
+              | null = null;
+            if (isInteractive) {
+              const interactive = msg['interactive'] as
+                | Record<string, unknown>
+                | undefined;
+              const interactiveType = interactive?.['type'] as
+                | string
+                | undefined;
+              if (interactiveType === 'button_reply') {
+                const reply = interactive?.['button_reply'] as
+                  | Record<string, string>
+                  | undefined;
+                interactiveData = {
+                  interactiveType: 'button_reply',
+                  replyId: reply?.['id'],
+                  replyTitle: reply?.['title'],
+                };
+              } else if (interactiveType === 'list_reply') {
+                const reply = interactive?.['list_reply'] as
+                  | Record<string, string>
+                  | undefined;
+                interactiveData = {
+                  interactiveType: 'list_reply',
+                  replyId: reply?.['id'],
+                  replyTitle: reply?.['title'],
+                };
+              }
+            }
+
             const message = this.messages.create({
               workspaceId,
               conversationId: conversation.id,
@@ -717,6 +775,8 @@ export class WaWebhookProcessor extends WorkerHost {
               mediaUrl: null,
               mediaMime: null,
               mediaFilename: null,
+              messageType: isInteractive ? 'interactive_reply' : null,
+              interactiveData,
             });
             await this.messages.save(message);
 
@@ -744,12 +804,28 @@ export class WaWebhookProcessor extends WorkerHost {
               },
             );
 
-            await this.maybeSendAutoReply(
+            const optOutHandled = await this.maybeHandleOptOut(
               workspaceId,
               conversation,
               contact,
               textBody,
             );
+
+            if (!optOutHandled) {
+              const consumed = await this.maybeAdvanceFlow(
+                message,
+                contact,
+                conversation,
+              );
+              if (!consumed) {
+                await this.maybeSendAutoReply(
+                  workspaceId,
+                  conversation,
+                  contact,
+                  textBody,
+                );
+              }
+            }
           }
         }
       }
@@ -889,6 +965,55 @@ export class WaWebhookProcessor extends WorkerHost {
       await this.contacts.save(contact);
     }
     return contact;
+  }
+
+  /**
+   * Consent keywords (STOP / START and their locale equivalents) take priority
+   * over every other inbound handler — they must flip `optedIn` and acknowledge
+   * even when an auto-reply rule would also match the same text. Returns true
+   * when the message was a consent command so the caller stops processing it.
+   */
+  private async maybeHandleOptOut(
+    workspaceId: string,
+    conversation: WaConversation,
+    contact: WaContact,
+    inboundText: string | null,
+  ): Promise<boolean> {
+    const keyword = inboundText?.trim().toUpperCase();
+    if (!keyword) return false;
+
+    const optingOut = OPT_OUT_KEYWORDS.has(keyword);
+    const optingIn = !optingOut && OPT_IN_KEYWORDS.has(keyword);
+    if (!optingOut && !optingIn) return false;
+
+    contact.optedIn = optingIn;
+    await this.contacts.save(contact);
+    this.logger.log(
+      `contact ${contact.id} ${optingOut ? 'opted out' : 'opted back in'} ` +
+        `(keyword: ${keyword})`,
+    );
+
+    // Plain text, not a template: this is a reply to an inbound message so the
+    // 24-hour window is open by definition. It bypasses the send service's
+    // opt-out gate because it acknowledges the consent change itself.
+    try {
+      await this.sendService.send(
+        workspaceId,
+        conversation.id,
+        {
+          type: 'text',
+          text: optingOut ? OPT_OUT_CONFIRMATION : OPT_IN_CONFIRMATION,
+        },
+        { bypassOptOutGate: true },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `opt-${optingOut ? 'out' : 'in'} confirmation failed on conversation ` +
+          `${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return true;
   }
 
   /**
@@ -1800,6 +1925,421 @@ export class WaWebhookProcessor extends WorkerHost {
     };
     if (incoming === 'failed') return true;
     return order[incoming] > order[current];
+  }
+
+  // ── Flow runner state machine ───────────────────────────────────────────────
+
+  private extractReply(message: WaMessage): ReplyContext {
+    if (message.messageType === 'interactive_reply') {
+      if (message.interactiveData?.interactiveType === 'button_reply') {
+        return { buttonId: message.interactiveData.replyId };
+      }
+      if (message.interactiveData?.interactiveType === 'list_reply') {
+        return { listRowId: message.interactiveData.replyId };
+      }
+    }
+    return { text: message.body ?? '' };
+  }
+
+  private async maybeAdvanceFlow(
+    message: WaMessage,
+    contact: WaContact,
+    conversation: WaConversation,
+  ): Promise<boolean> {
+    const session = await this.sessionRepo.findOne({
+      where: { conversationId: conversation.id, status: 'active' },
+    });
+
+    if (session && session.waitingForReply) {
+      const replyCtx = this.extractReply(message);
+      session.variables = {
+        ...session.variables,
+        reply: replyCtx.text ?? replyCtx.buttonId ?? replyCtx.listRowId ?? '',
+      };
+      await this.resumeSession(session, replyCtx, conversation, contact);
+      return true;
+    }
+
+    if (!session) {
+      const flow = await this.matchTrigger(
+        conversation.workspaceId,
+        message,
+        conversation,
+      );
+      if (!flow) return false;
+      const newSession = await this.createSession(flow, conversation);
+      const triggerNode = flow.nodes.find((n) => n.type === 'trigger');
+      if (!triggerNode) {
+        newSession.status = 'completed';
+        await this.sessionRepo.save(newSession);
+        return true;
+      }
+      await this.executeFrom(
+        newSession,
+        flow,
+        triggerNode.id,
+        conversation,
+        contact,
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  private async matchTrigger(
+    workspaceId: string,
+    message: WaMessage,
+    conversation: WaConversation,
+  ): Promise<WaFlow | null> {
+    const flows = await this.flowRepo.find({
+      where: { workspaceId, status: 'active' },
+    });
+    for (const flow of flows) {
+      switch (flow.triggerType) {
+        case 'first_message':
+          if (conversation.unreadCount === 1) return flow;
+          break;
+        case 'any_inbound':
+          return flow;
+        case 'keyword':
+          if (
+            flow.triggerKeywords.some((kw) =>
+              message.body?.toLowerCase().includes(kw.toLowerCase()),
+            )
+          ) {
+            return flow;
+          }
+          break;
+      }
+    }
+    return null;
+  }
+
+  private async createSession(
+    flow: WaFlow,
+    conversation: WaConversation,
+  ): Promise<WaFlowSession> {
+    const triggerNode = flow.nodes.find((n) => n.type === 'trigger');
+    const session = this.sessionRepo.create({
+      workspaceId: conversation.workspaceId,
+      conversationId: conversation.id,
+      flowId: flow.id,
+      currentNodeId: triggerNode?.id ?? '',
+      status: 'active',
+      variables: {},
+      waitingForReply: false,
+      nextFireAt: null,
+    });
+    return this.sessionRepo.save(session);
+  }
+
+  private async executeFrom(
+    session: WaFlowSession,
+    flow: WaFlow,
+    startNodeId: string,
+    conversation: WaConversation,
+    contact: WaContact,
+  ): Promise<void> {
+    const node = flow.nodes.find((n) => n.id === startNodeId);
+    if (!node) {
+      session.status = 'completed';
+      await this.sessionRepo.save(session);
+      return;
+    }
+    await this.executeNode(node, session, flow, conversation, contact);
+  }
+
+  private async executeNode(
+    node: FlowNode,
+    session: WaFlowSession,
+    flow: WaFlow,
+    conversation: WaConversation,
+    contact: WaContact,
+  ): Promise<void> {
+    const workspaceId = conversation.workspaceId;
+    session.currentNodeId = node.id;
+    await this.sessionRepo.save(session);
+
+    switch (node.type) {
+      case 'trigger': {
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      case 'send_message': {
+        const text = this.substituteVars(
+          (node.data['message'] as string | null | undefined) ?? '',
+          session,
+          contact,
+        );
+        try {
+          await this.sendService.send(workspaceId, conversation.id, {
+            type: 'text',
+            text,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `flow send_message failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      case 'set_field': {
+        const field = (node.data['field'] as string | null | undefined) ?? '';
+        const value = this.substituteVars(
+          (node.data['value'] as string | null | undefined) ?? '',
+          session,
+          contact,
+        );
+        if (field) {
+          session.variables = { ...session.variables, [field]: value };
+          await this.sessionRepo.save(session);
+        }
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      case 'add_tag': {
+        const tag = (node.data['tag'] as string | null | undefined) ?? '';
+        if (tag && !contact.tags.includes(tag)) {
+          contact.tags = [...contact.tags, tag];
+          await this.contacts.save(contact);
+        }
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      case 'remove_tag': {
+        const tag = (node.data['tag'] as string | null | undefined) ?? '';
+        if (tag) {
+          contact.tags = contact.tags.filter((t) => t !== tag);
+          await this.contacts.save(contact);
+        }
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      case 'change_stage': {
+        contact.pipelineStageId =
+          (node.data['stageId'] as string | null) ?? null;
+        await this.contacts.save(contact);
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      case 'assign_agent': {
+        conversation.assignedToUserId =
+          (node.data['userId'] as string | null) ?? null;
+        await this.conversations.save(conversation);
+        session.status = 'exited';
+        await this.sessionRepo.save(session);
+        break;
+      }
+
+      case 'end': {
+        session.status = 'completed';
+        await this.sessionRepo.save(session);
+        break;
+      }
+
+      case 'wait_for_reply': {
+        session.waitingForReply = true;
+        await this.sessionRepo.save(session);
+        break;
+      }
+
+      case 'button_branch': {
+        const body = (node.data['body'] as string | null | undefined) ?? '';
+        const options =
+          (node.data['options'] as
+            | Array<{ id: string; title: string }>
+            | undefined) ?? [];
+        try {
+          await this.sendService.sendInteractive(workspaceId, conversation.id, {
+            interactiveType: 'button',
+            body,
+            buttons: options,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `flow button_branch send failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          try {
+            await this.sendService.send(workspaceId, conversation.id, {
+              type: 'text',
+              text: body,
+            });
+          } catch (e2) {
+            this.logger.warn(
+              `flow button_branch fallback failed conv=${conversation.id}: ${e2 instanceof Error ? e2.message : String(e2)}`,
+            );
+          }
+        }
+        session.waitingForReply = true;
+        await this.sessionRepo.save(session);
+        break;
+      }
+
+      case 'list_branch': {
+        const body = (node.data['body'] as string | null | undefined) ?? '';
+        const buttonLabel =
+          (node.data['buttonLabel'] as string | null | undefined) ?? 'Choose';
+        const options =
+          (node.data['options'] as
+            | Array<{ id: string; title: string }>
+            | undefined) ?? [];
+        try {
+          await this.sendService.sendInteractive(workspaceId, conversation.id, {
+            interactiveType: 'list',
+            body,
+            buttonLabel,
+            sections: [{ rows: options }],
+          });
+        } catch (err) {
+          this.logger.warn(
+            `flow list_branch send failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          try {
+            await this.sendService.send(workspaceId, conversation.id, {
+              type: 'text',
+              text: body,
+            });
+          } catch (e2) {
+            this.logger.warn(
+              `flow list_branch fallback failed conv=${conversation.id}: ${e2 instanceof Error ? e2.message : String(e2)}`,
+            );
+          }
+        }
+        session.waitingForReply = true;
+        await this.sessionRepo.save(session);
+        break;
+      }
+
+      case 'condition': {
+        const variable =
+          (node.data['variable'] as string | null | undefined) ?? '';
+        const operator =
+          (node.data['operator'] as string | null | undefined) ?? 'equals';
+        const value = (node.data['value'] as string | null | undefined) ?? '';
+        const actual = session.variables[variable] ?? '';
+
+        let passes = false;
+        if (operator === 'equals') passes = actual === value;
+        else if (operator === 'contains')
+          passes = actual.toLowerCase().includes(value.toLowerCase());
+        else if (operator === 'not_equals') passes = actual !== value;
+
+        const next = this.followEdge(flow, node.id, passes ? 'yes' : 'no');
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      default: {
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+      }
+    }
+  }
+
+  private followEdge(
+    flow: WaFlow,
+    fromNodeId: string,
+    handleId?: string,
+  ): string | null {
+    const edge = flow.edges.find(
+      (e) =>
+        e.source === fromNodeId &&
+        (handleId !== undefined ? e.sourceHandle === handleId : true),
+    );
+    return edge?.target ?? null;
+  }
+
+  private async advanceToNext(
+    nextId: string | null,
+    session: WaFlowSession,
+    flow: WaFlow,
+    conversation: WaConversation,
+    contact: WaContact,
+  ): Promise<void> {
+    if (nextId) {
+      await this.executeFrom(session, flow, nextId, conversation, contact);
+    } else if (session.status === 'active') {
+      session.status = 'completed';
+      await this.sessionRepo.save(session);
+    }
+  }
+
+  private async resumeSession(
+    session: WaFlowSession,
+    replyCtx: ReplyContext,
+    conversation: WaConversation,
+    contact: WaContact,
+  ): Promise<void> {
+    const flow = await this.flowRepo.findOne({ where: { id: session.flowId } });
+    if (!flow) {
+      session.status = 'exited';
+      await this.sessionRepo.save(session);
+      return;
+    }
+
+    session.waitingForReply = false;
+    await this.sessionRepo.save(session);
+
+    const node = flow.nodes.find((n) => n.id === session.currentNodeId);
+    if (!node) {
+      session.status = 'completed';
+      await this.sessionRepo.save(session);
+      return;
+    }
+
+    let nextId: string | null;
+
+    if (node.type === 'button_branch') {
+      const options =
+        (node.data['options'] as
+          | Array<{ id: string; title: string }>
+          | undefined) ?? [];
+      const matchedId = options.find((o) => o.id === replyCtx.buttonId)?.id;
+      nextId =
+        this.followEdge(flow, node.id, matchedId) ??
+        this.followEdge(flow, node.id);
+    } else if (node.type === 'list_branch') {
+      const options =
+        (node.data['options'] as
+          | Array<{ id: string; title: string }>
+          | undefined) ?? [];
+      const matchedId = options.find((o) => o.id === replyCtx.listRowId)?.id;
+      nextId =
+        this.followEdge(flow, node.id, matchedId) ??
+        this.followEdge(flow, node.id);
+    } else {
+      nextId =
+        this.followEdge(flow, node.id, 'replied') ??
+        this.followEdge(flow, node.id);
+    }
+
+    await this.advanceToNext(nextId, session, flow, conversation, contact);
+  }
+
+  private substituteVars(
+    template: string,
+    session: WaFlowSession,
+    contact: WaContact,
+  ): string {
+    return template
+      .replace(/\{\{contact\.name\}\}/g, contact.name ?? '')
+      .replace(/\{\{contact\.phone\}\}/g, contact.phoneE164 ?? '')
+      .replace(/\{\{contact\.email\}\}/g, contact.email ?? '')
+      .replace(/\{\{reply\}\}/g, session.variables['reply'] ?? '');
   }
 }
 

@@ -11,6 +11,29 @@ export type MessageMediaType =
   | 'document'
   | 'sticker';
 
+export type MessageType =
+  | 'text'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'document'
+  | 'template'
+  | 'interactive_button'
+  | 'interactive_list'
+  | 'interactive_reply';
+
+export interface InteractiveData {
+  interactiveType?: 'button' | 'list' | 'button_reply' | 'list_reply';
+  body?: string;
+  buttons?: Array<{ id: string; title: string }>;
+  sections?: Array<{
+    title?: string;
+    rows: Array<{ id: string; title: string; description?: string }>;
+  }>;
+  replyId?: string;
+  replyTitle?: string;
+}
+
 @Index('idx_wa_messages_conversation', ['conversationId', 'timestamp'])
 @Index('idx_wa_messages_workspace', ['workspaceId'])
 @Index('uq_wa_messages_wamid', ['metaMessageId'], {
@@ -107,4 +130,17 @@ export class WaMessage extends BaseEntity {
     nullable: true,
   })
   mediaFilename!: string | null;
+
+  /** Structured message type — covers interactive subtypes. */
+  @Column({
+    name: 'message_type',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
+  messageType!: MessageType | null;
+
+  /** Full interactive payload (sent or received) for re-rendering without hitting Meta. */
+  @Column({ name: 'interactive_data', type: 'jsonb', nullable: true })
+  interactiveData!: InteractiveData | null;
 }

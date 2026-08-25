@@ -169,6 +169,9 @@ const PLANS: Array<Partial<Plan>> = [
       agent_inbox: false,
       api_access: false,
       keyword_autoreplies: false,
+      interactive_messages: false,
+      api_triggers: false,
+      chatbot_flows: false,
       support_level: 'community',
     },
     limits: {
@@ -191,6 +194,9 @@ const PLANS: Array<Partial<Plan>> = [
       agent_inbox: true,
       api_access: false,
       keyword_autoreplies: false,
+      interactive_messages: true,
+      api_triggers: true,
+      chatbot_flows: false,
       support_level: 'email_bh',
     },
     limits: {
@@ -213,6 +219,9 @@ const PLANS: Array<Partial<Plan>> = [
       agent_inbox: true,
       api_access: true,
       keyword_autoreplies: true,
+      interactive_messages: true,
+      api_triggers: true,
+      chatbot_flows: true,
       support_level: 'email_priority',
     },
     limits: {

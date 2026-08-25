@@ -14,10 +14,13 @@ import { AdminInboxOpsController } from './controllers/admin-inbox-ops.controlle
 import { AdminPipelineStageTemplatesController } from './controllers/admin-pipeline-stage-templates.controller';
 import { WhatsappTemplateExamplesController } from './controllers/whatsapp-template-examples.controller';
 import { WhatsappQuickRepliesController } from './controllers/whatsapp-quick-replies.controller';
+import { WhatsappFlowsController } from './controllers/whatsapp-flows.controller';
 import { WhatsappPipelineStagesController } from './controllers/whatsapp-pipeline-stages.controller';
 import { WhatsappInboxSettingsController } from './controllers/whatsapp-inbox-settings.controller';
 import { WhatsappInboxPresenceController } from './controllers/whatsapp-inbox-presence.controller';
 import { WhatsappAnalyticsController } from './controllers/whatsapp-analytics.controller';
+import { WhatsappApiKeysController } from './controllers/whatsapp-api-keys.controller';
+import { WhatsappTriggerController } from './controllers/whatsapp-trigger.controller';
 import { WhatsappRealtimeModule } from './realtime/whatsapp-realtime.module';
 import { PhoneNumber } from './entities/phone-number.entity';
 import { WabaAccount } from './entities/waba-account.entity';
@@ -35,6 +38,9 @@ import { WaPipelineStage } from './entities/wa-pipeline-stage.entity';
 import { WaInboxSettings } from './entities/wa-inbox-settings.entity';
 import { WaAssignmentEvent } from './entities/wa-assignment-event.entity';
 import { WaPipelineStageTemplate } from './entities/wa-pipeline-stage-template.entity';
+import { WaFlow } from './entities/wa-flow.entity';
+import { WaFlowSession } from './entities/wa-flow-session.entity';
+import { WaApiKey } from './entities/wa-api-key.entity';
 import { WaAutoReplyRule } from './auto-replies/wa-auto-reply-rule.entity';
 import { WhatsappAutoRepliesService } from './auto-replies/whatsapp-auto-replies.service';
 import { WhatsappAutoRepliesController } from './auto-replies/whatsapp-auto-replies.controller';
@@ -54,17 +60,20 @@ import { AdminConnectedWabasService } from './services/admin-connected-wabas.ser
 import { AdminInboxOpsService } from './services/admin-inbox-ops.service';
 import { AdminPipelineStageTemplatesService } from './services/admin-pipeline-stage-templates.service';
 import { WhatsappQuickRepliesService } from './services/whatsapp-quick-replies.service';
+import { WhatsappFlowsService } from './services/whatsapp-flows.service';
 import { WhatsappPipelineStagesService } from './services/whatsapp-pipeline-stages.service';
 import { WhatsappInboxSettingsService } from './services/whatsapp-inbox-settings.service';
 import { WhatsappInboxPresenceService } from './services/whatsapp-inbox-presence.service';
 import { WhatsappMediaService } from './services/whatsapp-media.service';
 import { WhatsappAnalyticsService } from './services/whatsapp-analytics.service';
+import { WhatsappApiKeysService } from './services/whatsapp-api-keys.service';
 import { R2UploadService } from '../common/services/r2-upload.service';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
 import { WorkspaceMember } from '../workspaces/entities/workspace-member.entity';
 import { WorkspaceMemberGuard } from '../workspaces/guards/workspace-member.guard';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { ApiKeyGuard } from './guards/api-key.guard';
 import { RequiresFeatureGuard } from './guards/requires-feature.guard';
 import { Plan } from '../plans/entities/plan.entity';
 import { User } from '../users/entities/user.entity';
@@ -96,6 +105,9 @@ import { AdminModule } from '../admin/admin.module';
       WaAssignmentEvent,
       WaPipelineStageTemplate,
       WaAutoReplyRule,
+      WaFlow,
+      WaFlowSession,
+      WaApiKey,
       WorkspaceService,
       Workspace,
       WorkspaceMember,
@@ -123,6 +135,7 @@ import { AdminModule } from '../admin/admin.module';
     WaTemplateExamplesService,
     AdminConnectedWabasService,
     WhatsappQuickRepliesService,
+    WhatsappFlowsService,
     WhatsappPipelineStagesService,
     WhatsappInboxSettingsService,
     WhatsappAutoRepliesService,
@@ -131,9 +144,11 @@ import { AdminModule } from '../admin/admin.module';
     WhatsappMediaService,
     WhatsappInboxPresenceService,
     WhatsappAnalyticsService,
+    WhatsappApiKeysService,
     R2UploadService,
     WorkspaceMemberGuard,
     RequiresFeatureGuard,
+    ApiKeyGuard,
   ],
   controllers: [
     WhatsappConnectController,
@@ -148,11 +163,14 @@ import { AdminModule } from '../admin/admin.module';
     AdminConnectedWabasController,
     WhatsappTemplateExamplesController,
     WhatsappQuickRepliesController,
+    WhatsappFlowsController,
     WhatsappPipelineStagesController,
     WhatsappInboxSettingsController,
     WhatsappAutoRepliesController,
     WhatsappInboxPresenceController,
     WhatsappAnalyticsController,
+    WhatsappApiKeysController,
+    WhatsappTriggerController,
     AdminInboxOpsController,
     AdminPipelineStageTemplatesController,
   ],

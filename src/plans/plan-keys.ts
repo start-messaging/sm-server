@@ -22,4 +22,10 @@ export const PLAN_FEATURE_KEYS = {
   campaignAnalytics: 'campaign_analytics',
   keywordAutoreplies: 'keyword_autoreplies',
   apiAccess: 'api_access',
+  /** Reply-button and list messages via the agent inbox. Available on BASIC and above. */
+  interactiveMessages: 'interactive_messages',
+  /** No-code chatbot flow builder. Available on ADVANCED only. */
+  chatbotFlows: 'chatbot_flows',
+  /** External REST API for sending messages. Available on BASIC and above. */
+  apiTriggers: 'api_triggers',
 } as const;

@@ -415,6 +415,7 @@ export class WhatsappCampaignsService {
       launchedAt: c.launchedAt?.toISOString() ?? null,
       completedAt: c.completedAt?.toISOString() ?? null,
       stats: c.stats,
+      skippedOptedOut: c.skippedOptedOut ?? 0,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     };

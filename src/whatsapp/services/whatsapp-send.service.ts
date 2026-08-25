@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AppException } from '../../common/exceptions/app.exception';
 import { isCustomerCareWindowOpen } from '../../common/phone/normalize-wa-e164';
+import { ContactOptedOutException } from '../exceptions/contact-opted-out.exception';
 import { decryptToken } from '../crypto/token-encryption';
 import { WabaAccount } from '../entities/waba-account.entity';
 import {
@@ -18,10 +19,11 @@ import { WA_ERR } from '../whatsapp-error-codes';
 import { InboxRealtimeService } from '../realtime/inbox-realtime.service';
 import {
   MetaGraphClient,
+  MetaInteractivePayload,
   MetaSendMessageInput,
-  type MetaMediaMessageType,
 } from './meta-graph.client';
 import { WhatsappMediaService } from './whatsapp-media.service';
+import { SendInteractiveDto } from '../dto/send-interactive.dto';
 
 export interface SendTextInput {
   type: 'text';
@@ -49,6 +51,15 @@ export type SendMessageInput =
   | SendTextInput
   | SendTemplateInput
   | SendMediaInput;
+
+export interface SendOptions {
+  /**
+   * Skip the opt-out gate. Only for the opt-out/opt-in confirmation reply,
+   * which acknowledges the consent change itself and must reach the contact
+   * even though they are now marked opted out.
+   */
+  bypassOptOutGate?: boolean;
+}
 
 /**
  * Orchestrates WhatsApp message sending.
@@ -82,6 +93,7 @@ export class WhatsappSendService {
     workspaceId: string,
     conversationId: string,
     input: SendMessageInput,
+    options?: SendOptions,
   ) {
     const waba = await this.requireWaba(workspaceId);
     const phone = await this.requireActivePhone(workspaceId);
@@ -90,22 +102,8 @@ export class WhatsappSendService {
       conversationId,
     );
 
-    // Block all sends (text + template) when the contact has opted out.
-    if (conversation.contactId) {
-      const contact = await this.contacts.findOne({
-        where: { id: conversation.contactId },
-        select: { id: true, optedIn: true },
-      });
-      if (contact && contact.optedIn === false) {
-        throw new AppException(
-          {
-            code: WA_ERR.CONTACT_OPTED_OUT,
-            message:
-              'This contact has unsubscribed and cannot receive messages. Turn opt-in back on from the contact if they have consented again.',
-          },
-          403,
-        );
-      }
+    if (!options?.bypassOptOutGate) {
+      await this.assertContactOptedIn(workspaceId, conversation);
     }
 
     if (
@@ -234,6 +232,136 @@ export class WhatsappSendService {
     );
 
     return this.serializeMessage(message);
+  }
+
+  async sendInteractive(
+    workspaceId: string,
+    conversationId: string,
+    dto: SendInteractiveDto,
+  ) {
+    const waba = await this.requireWaba(workspaceId);
+    const phone = await this.requireActivePhone(workspaceId);
+    const conversation = await this.requireConversation(
+      workspaceId,
+      conversationId,
+    );
+
+    await this.assertContactOptedIn(workspaceId, conversation);
+
+    if (!isCustomerCareWindowOpen(conversation.lastInboundAt)) {
+      throw new AppException(
+        {
+          code: WA_ERR.MESSAGE_WINDOW_CLOSED,
+          message:
+            '24-hour customer-care window has closed. Use an approved template to re-open the conversation.',
+        },
+        403,
+      );
+    }
+
+    const token = decryptToken(waba.accessTokenEncrypted);
+    const to = conversation.contactPhone.replace(/^\+/, '');
+    const interactive = this.buildInteractivePayload(dto);
+
+    let metaMessageId: string;
+    try {
+      const result = await this.meta.sendInteractiveMessage(
+        phone.metaPhoneNumberId,
+        to,
+        interactive,
+        token,
+      );
+      metaMessageId = result.messages[0]?.id ?? '';
+    } catch (err) {
+      this.mapMetaSendError(err);
+      throw err;
+    }
+
+    const messageType =
+      dto.interactiveType === 'button'
+        ? ('interactive_button' as const)
+        : ('interactive_list' as const);
+
+    const message = this.messages.create({
+      workspaceId,
+      conversationId,
+      direction: 'outbound',
+      status: 'sent',
+      body: dto.body,
+      timestamp: new Date(),
+      metaMessageId,
+      templateName: null,
+      mediaType: null,
+      mediaR2Key: null,
+      mediaUrl: null,
+      mediaMime: null,
+      mediaFilename: null,
+      messageType,
+      interactiveData: {
+        interactiveType: dto.interactiveType,
+        body: dto.body,
+        buttons: dto.buttons,
+        sections: dto.sections,
+      },
+    });
+    await this.messages.save(message);
+
+    conversation.lastMessageBody = `[Interactive: ${dto.interactiveType}]`;
+    conversation.lastMessageAt = message.timestamp;
+    await this.conversations.save(conversation);
+
+    await this.inboxRealtime.publishInboxUpdated(
+      workspaceId,
+      conversationId,
+      'outbound',
+    );
+
+    return this.serializeMessage(message);
+  }
+
+  private buildInteractivePayload(
+    dto: SendInteractiveDto,
+  ): MetaInteractivePayload {
+    const header = dto.header
+      ? dto.header.type === 'text'
+        ? { type: 'text' as const, text: dto.header.text ?? '' }
+        : { type: dto.header.type, link: dto.header.mediaUrl ?? '' }
+      : undefined;
+
+    const base = {
+      body: { text: dto.body },
+      ...(header ? { header } : {}),
+      ...(dto.footer ? { footer: { text: dto.footer } } : {}),
+    };
+
+    if (dto.interactiveType === 'button') {
+      return {
+        type: 'button',
+        ...base,
+        action: {
+          buttons: (dto.buttons ?? []).map((b) => ({
+            type: 'reply' as const,
+            reply: { id: b.id, title: b.title },
+          })),
+        },
+      };
+    }
+
+    return {
+      type: 'list',
+      ...base,
+      action: {
+        button: dto.buttonLabel ?? '',
+        sections: (dto.sections ?? []).map((s) => ({
+          ...(s.title ? { title: s.title } : {}),
+          rows: s.rows.map((r) => ({
+            id: r.id,
+            title: r.title,
+            ...(r.description ? { description: r.description } : {}),
+          })),
+        })),
+      },
+    };
   }
 
   private buildMetaPayload(
@@ -468,6 +596,37 @@ export class WhatsappSendService {
     return phone;
   }
 
+  /**
+   * Consent gate for every automated outbound. Resolves the contact by id when
+   * the conversation is linked, otherwise by phone — campaign-created
+   * conversations can still carry a null `contactId`, and legacy rows may store
+   * the number without a leading `+`.
+   */
+  private async assertContactOptedIn(
+    workspaceId: string,
+    conversation: WaConversation,
+  ): Promise<void> {
+    const digits = conversation.contactPhone.replace(/^\+/, '');
+    const phoneVariants =
+      digits === conversation.contactPhone
+        ? [conversation.contactPhone]
+        : [conversation.contactPhone, digits];
+
+    const contact = conversation.contactId
+      ? await this.contacts.findOne({
+          where: { id: conversation.contactId },
+          select: { id: true, optedIn: true },
+        })
+      : await this.contacts.findOne({
+          where: { workspaceId, phoneE164: In(phoneVariants) },
+          select: { id: true, optedIn: true },
+        });
+
+    if (contact?.optedIn === false) {
+      throw new ContactOptedOutException();
+    }
+  }
+
   private async requireConversation(
     workspaceId: string,
     conversationId: string,
@@ -499,6 +658,8 @@ export class WhatsappSendService {
       mediaUrl: m.mediaUrl ?? null,
       mediaMime: m.mediaMime ?? null,
       mediaFilename: m.mediaFilename ?? null,
+      messageType: m.messageType ?? null,
+      interactiveData: m.interactiveData ?? null,
     };
   }
 }

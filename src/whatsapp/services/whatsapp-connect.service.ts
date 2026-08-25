@@ -181,8 +181,10 @@ export class WhatsappConnectService {
         webhookSubscribed: true,
         status: WabaAccountStatus.ACTIVE,
         verificationStatus: WabaVerificationStatus.UNVERIFIED,
-        accountReviewStatus: wabaInfo.account_review_status?.toUpperCase() ?? null,
-        businessVerificationStatus: wabaInfo.business_verification_status ?? null,
+        accountReviewStatus:
+          wabaInfo.account_review_status?.toUpperCase() ?? null,
+        businessVerificationStatus:
+          wabaInfo.business_verification_status ?? null,
         rawMetadata: wabaInfo as unknown as Record<string, unknown>,
       });
       await em.save(waba);

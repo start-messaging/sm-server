@@ -7,13 +7,20 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
 import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.guard';
 import { WhatsappTemplatesService } from '../services/whatsapp-templates.service';
 import { CreateTemplateDto } from '../dto/create-template.dto';
+import { WaTemplateDto, WaTemplateListDto } from '../dto/wa-template.dto';
 
 @ApiTags('whatsapp-templates')
 @Controller({ path: 'workspaces/:slug/whatsapp/templates', version: '1' })
@@ -24,6 +31,7 @@ export class WhatsappTemplatesController {
 
   @Get()
   @ApiOperation({ summary: 'List templates' })
+  @ApiOkResponse({ type: WaTemplateListDto })
   list(
     @Param('slug') _slug: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
@@ -32,7 +40,12 @@ export class WhatsappTemplatesController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create template on Meta' })
+  @ApiOperation({
+    summary: 'Create template on Meta',
+    description:
+      'Submits the template to Meta for review. The response always has status PENDING — Meta approves asynchronously, so a created template is not yet sendable.',
+  })
+  @ApiCreatedResponse({ type: WaTemplateDto })
   create(
     @Param('slug') _slug: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
@@ -53,6 +66,7 @@ export class WhatsappTemplatesController {
 
   @Post('sync')
   @ApiOperation({ summary: 'Sync templates from Meta' })
+  @ApiOkResponse({ type: WaTemplateListDto })
   sync(
     @Param('slug') _slug: string,
     @CurrentWorkspace() ctx: WorkspaceContext,

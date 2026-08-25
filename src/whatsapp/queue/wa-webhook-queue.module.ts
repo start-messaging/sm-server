@@ -12,6 +12,8 @@ import { WaInboxSettings } from '../entities/wa-inbox-settings.entity';
 import { WaAssignmentEvent } from '../entities/wa-assignment-event.entity';
 import { WaCampaign } from '../entities/wa-campaign.entity';
 import { WaAutoReplyRule } from '../auto-replies/wa-auto-reply-rule.entity';
+import { WaFlow } from '../entities/wa-flow.entity';
+import { WaFlowSession } from '../entities/wa-flow-session.entity';
 import { WorkspaceService } from '../../workspaces/entities/workspace-service.entity';
 import { WorkspaceMember } from '../../workspaces/entities/workspace-member.entity';
 import { Workspace } from '../../workspaces/entities/workspace.entity';
@@ -39,6 +41,8 @@ import { R2UploadService } from '../../common/services/r2-upload.service';
       WaAssignmentEvent,
       WaCampaign,
       WaAutoReplyRule,
+      WaFlow,
+      WaFlowSession,
       WorkspaceService,
       WorkspaceMember,
       Workspace,
