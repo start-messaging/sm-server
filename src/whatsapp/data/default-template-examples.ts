@@ -187,4 +187,221 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
     sortOrder: 90,
     status: 'published',
   },
+  // ── Button templates ────────────────────────────────────────────────────────
+  {
+    slug: 'confirm_reply_buttons',
+    suggestedName: 'confirm_reply_buttons',
+    category: 'UTILITY',
+    language: 'en_US',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Hi {{1}}, please confirm your appointment on {{2}} at {{3}}.',
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'QUICK_REPLY', text: 'Confirm ✅' },
+          { type: 'QUICK_REPLY', text: 'Cancel ❌' },
+          { type: 'QUICK_REPLY', text: 'Reschedule' },
+        ],
+      },
+    ],
+    useWhen: 'Appointment / order confirmation that needs a one-tap yes/no.',
+    metaTip:
+      'Quick Reply buttons return a webhook payload — wire a chatbot flow to branch on the reply.',
+    sortOrder: 100,
+    status: 'published',
+  },
+  {
+    slug: 'track_order_url_button',
+    suggestedName: 'track_order_url_button',
+    category: 'UTILITY',
+    language: 'en_US',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Hi {{1}}, your order {{2}} is on its way! Click below to track it live.',
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Track order',
+            url: 'https://track.example.com/{{1}}',
+            example: ['ORD-123456'],
+          },
+        ],
+      },
+    ],
+    useWhen: 'Delivery notifications with a deep-link to the tracking page.',
+    metaTip:
+      'URL buttons support one {{1}} variable appended to a base URL. Provide an example value so Meta can validate.',
+    sortOrder: 110,
+    status: 'published',
+  },
+  {
+    slug: 'call_us_phone_button',
+    suggestedName: 'call_us_phone_button',
+    category: 'UTILITY',
+    language: 'en_US',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Hi {{1}}, your support request #{{2}} is ready for a callback. Tap below to reach our team.',
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'PHONE_NUMBER', text: 'Call support', phone_number: '+918000000000' }],
+      },
+    ],
+    useWhen: 'Support follow-ups or callback prompts.',
+    metaTip: 'Phone number must include country code. Replace with your actual support line.',
+    sortOrder: 120,
+    status: 'published',
+  },
+  {
+    slug: 'coupon_copy_code',
+    suggestedName: 'coupon_copy_code',
+    category: 'MARKETING',
+    language: 'en_US',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Hi {{1}}, here is your exclusive discount code — valid until {{2}}. Tap below to copy it.',
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'COPY_CODE', example: 'SUMMER20' },
+        ],
+      },
+    ],
+    useWhen: 'Promo campaigns where the customer needs a coupon code to redeem.',
+    metaTip:
+      'Copy-code button label is fixed by Meta ("Copy offer code"). The `example` field carries the sample coupon for Meta review.',
+    sortOrder: 130,
+    status: 'published',
+  },
+  // ── Limited Time Offer ──────────────────────────────────────────────────────
+  {
+    slug: 'flash_sale_lto',
+    suggestedName: 'flash_sale_lto',
+    category: 'MARKETING',
+    language: 'en_US',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: '⚡ Flash sale — {{1}} off',
+      },
+      {
+        type: 'LIMITED_TIME_OFFER',
+        limited_time_offer: {
+          text: 'Offer expires soon',
+          has_expiration: true,
+        },
+      },
+      {
+        type: 'BODY',
+        text: "Hi {{1}}, grab {{2}} off sitewide. This deal ends at {{3}} — don't miss it!",
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'URL', text: 'Shop now', url: 'https://shop.example.com/sale' }],
+      },
+    ],
+    useWhen: 'Time-boxed flash sales where the countdown timer adds urgency.',
+    metaTip:
+      'The LIMITED_TIME_OFFER component activates Meta\'s native countdown timer inside WhatsApp. Pair with a URL button.',
+    sortOrder: 140,
+    status: 'published',
+  },
+  // ── Authentication / OTP with copy-code button ──────────────────────────────
+  {
+    slug: 'auth_otp_copy_code',
+    suggestedName: 'auth_otp_copy_code',
+    category: 'AUTHENTICATION',
+    language: 'en_US',
+    components: [
+      {
+        type: 'BODY',
+        text: '{{1}} is your verification code.',
+        add_security_recommendation: true,
+      },
+      {
+        type: 'FOOTER',
+        code_expiration_minutes: 10,
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'OTP', otp_type: 'COPY_CODE', text: 'Copy code' }],
+      },
+    ],
+    useWhen: 'Authentication OTP with a native "Copy code" button — Meta\'s recommended format for auth templates.',
+    metaTip:
+      'Submit as category AUTHENTICATION. The BODY `add_security_recommendation` appends Meta\'s "Do not share this code" line automatically.',
+    sortOrder: 150,
+    status: 'published',
+  },
+  // ── Carousel ────────────────────────────────────────────────────────────────
+  {
+    slug: 'product_showcase_carousel',
+    suggestedName: 'product_showcase_carousel',
+    category: 'MARKETING',
+    language: 'en_US',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Hi {{1}}, check out our top picks just for you 👇',
+      },
+      {
+        type: 'CAROUSEL',
+        cards: [
+          {
+            components: [
+              { type: 'HEADER', format: 'IMAGE' },
+              { type: 'BODY', text: '{{1}} — {{2}}' },
+              {
+                type: 'BUTTONS',
+                buttons: [
+                  { type: 'URL', text: 'View product', url: 'https://shop.example.com/{{1}}', example: ['product-a'] },
+                ],
+              },
+            ],
+          },
+          {
+            components: [
+              { type: 'HEADER', format: 'IMAGE' },
+              { type: 'BODY', text: '{{1}} — {{2}}' },
+              {
+                type: 'BUTTONS',
+                buttons: [
+                  { type: 'URL', text: 'View product', url: 'https://shop.example.com/{{1}}', example: ['product-b'] },
+                ],
+              },
+            ],
+          },
+          {
+            components: [
+              { type: 'HEADER', format: 'IMAGE' },
+              { type: 'BODY', text: '{{1}} — {{2}}' },
+              {
+                type: 'BUTTONS',
+                buttons: [
+                  { type: 'URL', text: 'View product', url: 'https://shop.example.com/{{1}}', example: ['product-c'] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    useWhen: 'Showcase 2–10 products or categories in a horizontally scrollable card deck.',
+    metaTip:
+      'Upload card images after Meta approves the template. All cards share the same button type. Variable {{1}} in each card body is independent per card.',
+    sortOrder: 160,
+    status: 'published',
+  },
 ];
