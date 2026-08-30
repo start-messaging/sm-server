@@ -29,6 +29,7 @@ export interface CreateCampaignInput {
   audienceIds: string[];
   scheduledAt?: string;
   variableMapping?: Record<string, string>;
+  flowId?: string;
 }
 
 export interface UpdateCampaignInput {
@@ -38,6 +39,7 @@ export interface UpdateCampaignInput {
   audienceIds?: string[];
   scheduledAt?: string | null;
   variableMapping?: Record<string, string>;
+  flowId?: string | null;
 }
 
 @Injectable()
@@ -69,9 +71,13 @@ export class WhatsappCampaignsService {
   }
 
   async create(workspaceId: string, input: CreateCampaignInput) {
+    const resolvedName = await this.resolveUniqueCampaignName(
+      workspaceId,
+      input.name,
+    );
     const campaign = this.campaigns.create({
       workspaceId,
-      name: input.name,
+      name: resolvedName,
       templateName: input.templateName,
       templateLanguage: input.templateLanguage,
       audienceIds: input.audienceIds,
@@ -79,6 +85,7 @@ export class WhatsappCampaignsService {
       scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
       status: 'DRAFT' as CampaignStatus,
       stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 },
+      flowId: input.flowId ?? null,
     });
     await this.campaigns.save(campaign);
     return this.serialize(campaign);
@@ -130,6 +137,9 @@ export class WhatsappCampaignsService {
     }
     if (input.variableMapping !== undefined) {
       campaign.variableMapping = input.variableMapping;
+    }
+    if (input.flowId !== undefined) {
+      campaign.flowId = input.flowId ?? null;
     }
 
     await this.campaigns.save(campaign);
@@ -337,6 +347,16 @@ export class WhatsappCampaignsService {
     };
   }
 
+  async getLastMarketingSend(
+    workspaceId: string,
+  ): Promise<{ lastSentAt: string | null }> {
+    const campaign = await this.campaigns.findOne({
+      where: { workspaceId, status: 'COMPLETED' },
+      order: { updatedAt: 'DESC' },
+    });
+    return { lastSentAt: campaign?.updatedAt?.toISOString() ?? null };
+  }
+
   async analytics(workspaceId: string, id: string) {
     const campaign = await this.requireCampaign(workspaceId, id);
 
@@ -385,6 +405,28 @@ export class WhatsappCampaignsService {
     );
   }
 
+  private async resolveUniqueCampaignName(
+    workspaceId: string,
+    baseName: string,
+  ): Promise<string> {
+    const existing = await this.campaigns.findOne({
+      where: { workspaceId, name: baseName },
+      select: ['id'],
+    });
+    if (!existing) return baseName;
+
+    let counter = 2;
+    while (true) {
+      const candidate = `${baseName} (${counter})`;
+      const taken = await this.campaigns.findOne({
+        where: { workspaceId, name: candidate },
+        select: ['id'],
+      });
+      if (!taken) return candidate;
+      counter++;
+    }
+  }
+
   private async requireCampaign(
     workspaceId: string,
     id: string,
@@ -416,6 +458,7 @@ export class WhatsappCampaignsService {
       completedAt: c.completedAt?.toISOString() ?? null,
       stats: c.stats,
       skippedOptedOut: c.skippedOptedOut ?? 0,
+      flowId: c.flowId ?? null,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     };

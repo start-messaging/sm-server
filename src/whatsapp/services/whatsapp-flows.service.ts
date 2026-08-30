@@ -8,6 +8,10 @@ import {
   WaFlow,
   type FlowNode,
 } from '../entities/wa-flow.entity';
+import { WaFlowSession } from '../entities/wa-flow-session.entity';
+import { WaConversation } from '../entities/wa-conversation.entity';
+import { WaContact } from '../entities/wa-contact.entity';
+import { WhatsappFlowRunnerService } from './whatsapp-flow-runner.service';
 
 export const FLOW_ERR = {
   NOT_FOUND: 'FLOW_NOT_FOUND',
@@ -20,6 +24,13 @@ export class WhatsappFlowsService {
   constructor(
     @InjectRepository(WaFlow)
     private readonly flows: Repository<WaFlow>,
+    @InjectRepository(WaFlowSession)
+    private readonly sessions: Repository<WaFlowSession>,
+    @InjectRepository(WaConversation)
+    private readonly conversations: Repository<WaConversation>,
+    @InjectRepository(WaContact)
+    private readonly contacts: Repository<WaContact>,
+    private readonly flowRunner: WhatsappFlowRunnerService,
   ) {}
 
   /** Serialized shape returned to the client. Static so controllers can map lists. */
@@ -145,6 +156,123 @@ export class WhatsappFlowsService {
     const flow = await this.findOne(workspaceId, id);
     flow.status = 'inactive';
     return this.flows.save(flow);
+  }
+
+  async enrollContact(
+    flowId: string,
+    conversationId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const flow = await this.flows.findOne({
+      where: { id: flowId, workspaceId, status: 'active' },
+    });
+    if (!flow) return;
+
+    const existing = await this.sessions.findOne({
+      where: { conversationId, status: 'active' },
+    });
+    if (existing) return;
+
+    const firstNode = flow.nodes?.find((n: FlowNode) => n.type !== 'trigger');
+    if (!firstNode) return;
+
+    const session = this.sessions.create({
+      flowId,
+      conversationId,
+      workspaceId,
+      currentNodeId: firstNode.id,
+      status: 'active',
+      waitingForReply: false,
+      variables: {},
+      nextFireAt: null,
+    });
+    await this.sessions.save(session);
+  }
+
+  async triggerOnContact(
+    flowId: string,
+    contactId: string,
+    workspaceId: string,
+  ): Promise<{ sessionId: string }> {
+    const flow = await this.flows.findOne({
+      where: { id: flowId, workspaceId },
+    });
+    if (!flow) {
+      throw new AppException(
+        { code: FLOW_ERR.NOT_FOUND, message: 'Flow not found' },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (flow.status !== 'active') {
+      throw new AppException(
+        { code: 'FLOW_NOT_ACTIVE', message: 'Flow is not active' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const contact = await this.contacts.findOne({
+      where: { id: contactId, workspaceId },
+    });
+    if (!contact) {
+      throw new AppException(
+        { code: 'CONTACT_NOT_FOUND', message: 'Contact not found' },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    let conversation = await this.conversations.findOne({
+      where: { workspaceId, contactId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!conversation) {
+      conversation = this.conversations.create({
+        workspaceId,
+        contactId,
+        contactPhone: contact.phoneE164,
+        contactName: contact.name,
+        status: 'open',
+        unreadCount: 0,
+        lastMessageBody: null,
+        lastMessageAt: new Date(),
+        lastInboundAt: null,
+      });
+      await this.conversations.save(conversation);
+    }
+
+    const existing = await this.sessions.findOne({
+      where: { conversationId: conversation.id, status: 'active' },
+    });
+    if (existing) return { sessionId: existing.id };
+
+    const firstNode = flow.nodes.find((n: FlowNode) => n.type !== 'trigger');
+    if (!firstNode) {
+      throw new AppException(
+        { code: 'FLOW_NO_NODES', message: 'Flow has no nodes after trigger' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const session = this.sessions.create({
+      flowId,
+      conversationId: conversation.id,
+      workspaceId,
+      currentNodeId: firstNode.id,
+      status: 'active',
+      waitingForReply: false,
+      variables: {},
+      nextFireAt: null,
+    });
+    await this.sessions.save(session);
+
+    await this.flowRunner.executeFrom(
+      session,
+      flow,
+      firstNode.id,
+      conversation,
+      contact,
+    );
+
+    return { sessionId: session.id };
   }
 
   /** Human-readable reasons the graph is not runnable; empty array = valid. */

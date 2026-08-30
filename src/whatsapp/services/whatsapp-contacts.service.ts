@@ -202,13 +202,18 @@ export class WhatsappContactsService {
       tags?: string;
     }>,
     plan: Plan | undefined,
+    filenameTag?: string,
   ) {
-    const normalized: NormalizedImportRow[] = rows.map((row) => ({
-      phoneE164Raw: row.phoneE164,
-      name: row.name,
-      email: row.email,
-      tags: row.tags ? row.tags.split(',').map((t) => t.trim()) : undefined,
-    }));
+    const normalized: NormalizedImportRow[] = rows.map((row) => {
+      const rowTags = row.tags ? row.tags.split(',').map((t) => t.trim()) : [];
+      if (filenameTag) rowTags.push(filenameTag);
+      return {
+        phoneE164Raw: row.phoneE164,
+        name: row.name,
+        email: row.email,
+        tags: rowTags.length ? rowTags : undefined,
+      };
+    });
     return this.runImport(workspaceId, plan, normalized);
   }
 
@@ -225,6 +230,7 @@ export class WhatsappContactsService {
     rows: Record<string, string>[],
     mapping: Record<string, string>,
     plan: Plan | undefined,
+    filenameTag?: string,
   ) {
     const phoneHeader = Object.keys(mapping).find(
       (h) => mapping[h] === 'phone',
@@ -249,6 +255,7 @@ export class WhatsappContactsService {
         .flatMap((h) => (row[h] ?? '').split(','))
         .map((t) => t.trim())
         .filter(Boolean);
+      if (filenameTag) tags.push(filenameTag);
 
       return {
         phoneE164Raw: phoneHeader ? (row[phoneHeader] ?? '') : '',

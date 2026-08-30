@@ -60,6 +60,15 @@ export class WaCampaign extends BaseEntity {
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt!: Date | null;
 
+  /** Publicly accessible URL for a media HEADER component (image/video/document). */
+  @Column({
+    name: 'header_media_url',
+    type: 'varchar',
+    length: 2048,
+    nullable: true,
+  })
+  headerMediaUrl!: string | null;
+
   /**
    * Maps template variable position ("1", "2", …) to:
    * `name` | `phone` | `attr:<key>` | `text:<literal>` (same value for every recipient).
@@ -84,4 +93,7 @@ export class WaCampaign extends BaseEntity {
    */
   @Column({ name: 'skipped_opted_out', type: 'int', default: 0 })
   skippedOptedOut!: number;
+
+  @Column({ name: 'flow_id', type: 'uuid', nullable: true })
+  flowId!: string | null;
 }

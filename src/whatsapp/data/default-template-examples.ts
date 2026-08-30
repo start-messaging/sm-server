@@ -253,11 +253,18 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
       },
       {
         type: 'BUTTONS',
-        buttons: [{ type: 'PHONE_NUMBER', text: 'Call support', phone_number: '+918000000000' }],
+        buttons: [
+          {
+            type: 'PHONE_NUMBER',
+            text: 'Call support',
+            phone_number: '+918000000000',
+          },
+        ],
       },
     ],
     useWhen: 'Support follow-ups or callback prompts.',
-    metaTip: 'Phone number must include country code. Replace with your actual support line.',
+    metaTip:
+      'Phone number must include country code. Replace with your actual support line.',
     sortOrder: 120,
     status: 'published',
   },
@@ -273,12 +280,11 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
       },
       {
         type: 'BUTTONS',
-        buttons: [
-          { type: 'COPY_CODE', example: 'SUMMER20' },
-        ],
+        buttons: [{ type: 'COPY_CODE', example: 'SUMMER20' }],
       },
     ],
-    useWhen: 'Promo campaigns where the customer needs a coupon code to redeem.',
+    useWhen:
+      'Promo campaigns where the customer needs a coupon code to redeem.',
     metaTip:
       'Copy-code button label is fixed by Meta ("Copy offer code"). The `example` field carries the sample coupon for Meta review.',
     sortOrder: 130,
@@ -309,12 +315,18 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
       },
       {
         type: 'BUTTONS',
-        buttons: [{ type: 'URL', text: 'Shop now', url: 'https://shop.example.com/sale' }],
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Shop now',
+            url: 'https://shop.example.com/sale',
+          },
+        ],
       },
     ],
     useWhen: 'Time-boxed flash sales where the countdown timer adds urgency.',
     metaTip:
-      'The LIMITED_TIME_OFFER component activates Meta\'s native countdown timer inside WhatsApp. Pair with a URL button.',
+      "The LIMITED_TIME_OFFER component activates Meta's native countdown timer inside WhatsApp. Pair with a URL button.",
     sortOrder: 140,
     status: 'published',
   },
@@ -339,7 +351,8 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
         buttons: [{ type: 'OTP', otp_type: 'COPY_CODE', text: 'Copy code' }],
       },
     ],
-    useWhen: 'Authentication OTP with a native "Copy code" button — Meta\'s recommended format for auth templates.',
+    useWhen:
+      'Authentication OTP with a native "Copy code" button — Meta\'s recommended format for auth templates.',
     metaTip:
       'Submit as category AUTHENTICATION. The BODY `add_security_recommendation` appends Meta\'s "Do not share this code" line automatically.',
     sortOrder: 150,
@@ -366,7 +379,12 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
               {
                 type: 'BUTTONS',
                 buttons: [
-                  { type: 'URL', text: 'View product', url: 'https://shop.example.com/{{1}}', example: ['product-a'] },
+                  {
+                    type: 'URL',
+                    text: 'View product',
+                    url: 'https://shop.example.com/{{1}}',
+                    example: ['product-a'],
+                  },
                 ],
               },
             ],
@@ -378,7 +396,12 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
               {
                 type: 'BUTTONS',
                 buttons: [
-                  { type: 'URL', text: 'View product', url: 'https://shop.example.com/{{1}}', example: ['product-b'] },
+                  {
+                    type: 'URL',
+                    text: 'View product',
+                    url: 'https://shop.example.com/{{1}}',
+                    example: ['product-b'],
+                  },
                 ],
               },
             ],
@@ -390,7 +413,12 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
               {
                 type: 'BUTTONS',
                 buttons: [
-                  { type: 'URL', text: 'View product', url: 'https://shop.example.com/{{1}}', example: ['product-c'] },
+                  {
+                    type: 'URL',
+                    text: 'View product',
+                    url: 'https://shop.example.com/{{1}}',
+                    example: ['product-c'],
+                  },
                 ],
               },
             ],
@@ -398,7 +426,8 @@ export const DEFAULT_TEMPLATE_EXAMPLES: TemplateExampleSeed[] = [
         ],
       },
     ],
-    useWhen: 'Showcase 2–10 products or categories in a horizontally scrollable card deck.',
+    useWhen:
+      'Showcase 2–10 products or categories in a horizontally scrollable card deck.',
     metaTip:
       'Upload card images after Meta approves the template. All cards share the same button type. Variable {{1}} in each card body is independent per card.',
     sortOrder: 160,

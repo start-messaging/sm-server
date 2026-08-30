@@ -38,6 +38,7 @@ export interface WabaInfo {
   business_verification_status?: string;
   /** Account-level health signal object from Graph. */
   health_status?: { can_send_message?: string; entities?: unknown[] };
+  payment_method_attached?: boolean;
 }
 
 export interface PhoneNumberInfo {
@@ -103,7 +104,7 @@ export class MetaGraphClient {
 
   /** Fetch WABA details from the Graph API. */
   async getWaba(wabaId: string, accessToken: string): Promise<WabaInfo> {
-    const url = `${GRAPH_BASE}/${this.version}/${wabaId}?fields=id,name,business_id,currency,timezone_id,account_review_status,business_verification_status,health_status`;
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}?fields=id,name,business_id,currency,timezone_id,account_review_status,business_verification_status,health_status,payment_method_attached`;
     return this.get<WabaInfo>(url, accessToken);
   }
 
@@ -252,6 +253,48 @@ export class MetaGraphClient {
 
     const result = await this.parseResponse<{ id: string }>(res, url);
     return result;
+  }
+
+  /**
+   * Upload media to Meta using the Resumable Upload API.
+   * Returns the upload handle (e.g. "upload:...") used as example.header_handle.
+   */
+  async resumableUploadTemplateMedia(
+    wabaId: string,
+    accessToken: string,
+    fileBuffer: Buffer,
+    mimeType: string,
+    fileLength: number,
+  ): Promise<string> {
+    const sessionUrl = `${GRAPH_BASE}/${this.version}/${wabaId}/uploads?file_length=${fileLength}&file_type=${encodeURIComponent(mimeType)}&access_token=${accessToken}`;
+    const sessionRes = await fetch(sessionUrl, { method: 'POST' });
+    const session = await this.parseResponse<{ id: string }>(
+      sessionRes,
+      sessionUrl,
+    );
+
+    const uploadUrl = `${GRAPH_BASE}/${this.version}/${session.id}`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `OAuth ${accessToken}`,
+        file_offset: '0',
+        'Content-Type': mimeType,
+      },
+      body: new Uint8Array(fileBuffer),
+    });
+    if (!uploadRes.ok) {
+      const errBody: unknown = await uploadRes.json().catch(() => ({}));
+      throw new AppException(
+        {
+          code: WA_ERR.MEDIA_UPLOAD_FAILED,
+          message: `Template media upload failed: ${JSON.stringify(errBody)}`,
+        },
+        502,
+      );
+    }
+    const result = (await uploadRes.json()) as { h: string };
+    return result.h;
   }
 
   // ── Messaging ───────────────────────────────────────────────────────────

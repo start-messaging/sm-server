@@ -193,6 +193,24 @@ export class WhatsappTemplatesService {
     return { templates: templates.map(toWaTemplateDto), total };
   }
 
+  async uploadTemplateMedia(
+    workspaceId: string,
+    buffer: Buffer,
+    mimeType: string,
+    fileLength: number,
+  ): Promise<{ handle: string }> {
+    const waba = await this.requireWaba(workspaceId);
+    const token = decryptToken(waba.accessTokenEncrypted);
+    const handle = await this.meta.resumableUploadTemplateMedia(
+      waba.metaWabaId,
+      token,
+      buffer,
+      mimeType,
+      fileLength,
+    );
+    return { handle };
+  }
+
   private async requireWaba(workspaceId: string): Promise<WabaAccount> {
     const waba = await this.wabaAccounts.findOne({
       where: { workspaceId, serviceKey: 'whatsapp' },

@@ -8,7 +8,10 @@ import { WaMessage } from '../entities/wa-message.entity';
 import { WaTemplate } from '../entities/wa-template.entity';
 import { WabaAccount } from '../entities/waba-account.entity';
 import { PhoneNumber } from '../entities/phone-number.entity';
+import { WaFlow } from '../entities/wa-flow.entity';
+import { WaFlowSession } from '../entities/wa-flow-session.entity';
 import { MetaGraphClient } from '../services/meta-graph.client';
+import { WhatsappFlowsService } from '../services/whatsapp-flows.service';
 import { WA_CAMPAIGN_QUEUE } from './wa-campaign.constants';
 import { WaCampaignProcessor } from './wa-campaign.processor';
 
@@ -23,9 +26,11 @@ import { WaCampaignProcessor } from './wa-campaign.processor';
       WaTemplate,
       WabaAccount,
       PhoneNumber,
+      WaFlow,
+      WaFlowSession,
     ]),
   ],
-  providers: [WaCampaignProcessor, MetaGraphClient],
+  providers: [WaCampaignProcessor, MetaGraphClient, WhatsappFlowsService],
   exports: [BullModule],
 })
 export class WaCampaignQueueModule {}

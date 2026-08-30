@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
@@ -24,5 +24,43 @@ export class WhatsappAnalyticsController {
     @CurrentWorkspace() ctx: WorkspaceContext,
   ) {
     return this.analyticsService.overview(ctx.workspace.id);
+  }
+
+  @Get('agents')
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
+  @ApiOperation({ summary: 'Per-agent performance stats for a date range' })
+  getAgentStats(
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const fromDate = from
+      ? new Date(from)
+      : new Date(Date.now() - 7 * 86_400_000);
+    const toDate = to ? new Date(to) : new Date();
+    return this.analyticsService.getAgentStats(
+      ctx.workspace.id,
+      fromDate,
+      toDate,
+    );
+  }
+
+  @Get('message-errors')
+  @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
+  @ApiOperation({ summary: 'Failed message error report for a date range' })
+  getMessageErrors(
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const fromDate = from
+      ? new Date(from)
+      : new Date(Date.now() - 7 * 86_400_000);
+    const toDate = to ? new Date(to) : new Date();
+    return this.analyticsService.getMessageErrors(
+      ctx.workspace.id,
+      fromDate,
+      toDate,
+    );
   }
 }

@@ -122,10 +122,18 @@ export class WhatsappContactsController {
         })
         .filter((r: { phoneE164: string }) => r.phoneE164);
 
+      const filenameTag =
+        file.originalname
+          .replace(/\.csv$/i, '')
+          .replace(/[^a-zA-Z0-9 _-]/g, ' ')
+          .trim()
+          .slice(0, 80) || undefined;
+
       return this.contactsService.importCsv(
         ctx.workspace.id,
         rows,
         ctx.workspace.plan,
+        filenameTag,
       );
     }
 
@@ -135,6 +143,7 @@ export class WhatsappContactsController {
         body.rows,
         body.mapping ?? {},
         ctx.workspace.plan,
+        body.filenameTag,
       );
     }
 

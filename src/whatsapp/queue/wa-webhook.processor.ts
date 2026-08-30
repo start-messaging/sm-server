@@ -56,8 +56,9 @@ import { WhatsappSendService } from '../services/whatsapp-send.service';
 import { WhatsappAutoRepliesService } from '../auto-replies/whatsapp-auto-replies.service';
 import { Workspace } from '../../workspaces/entities/workspace.entity';
 import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
-import { WaFlow, FlowNode } from '../entities/wa-flow.entity';
+import { WaFlow } from '../entities/wa-flow.entity';
 import { WaFlowSession } from '../entities/wa-flow-session.entity';
+import { WhatsappFlowRunnerService } from '../services/whatsapp-flow-runner.service';
 
 export interface WaWebhookJobData {
   eventId: string;
@@ -125,6 +126,7 @@ export class WaWebhookProcessor extends WorkerHost {
     private readonly mediaService: WhatsappMediaService,
     private readonly sendService: WhatsappSendService,
     private readonly autoReplies: WhatsappAutoRepliesService,
+    private readonly flowRunner: WhatsappFlowRunnerService,
   ) {
     super();
   }
@@ -1974,7 +1976,7 @@ export class WaWebhookProcessor extends WorkerHost {
         await this.sessionRepo.save(newSession);
         return true;
       }
-      await this.executeFrom(
+      await this.flowRunner.executeFrom(
         newSession,
         flow,
         triggerNode.id,
@@ -2034,250 +2036,6 @@ export class WaWebhookProcessor extends WorkerHost {
     return this.sessionRepo.save(session);
   }
 
-  private async executeFrom(
-    session: WaFlowSession,
-    flow: WaFlow,
-    startNodeId: string,
-    conversation: WaConversation,
-    contact: WaContact,
-  ): Promise<void> {
-    const node = flow.nodes.find((n) => n.id === startNodeId);
-    if (!node) {
-      session.status = 'completed';
-      await this.sessionRepo.save(session);
-      return;
-    }
-    await this.executeNode(node, session, flow, conversation, contact);
-  }
-
-  private async executeNode(
-    node: FlowNode,
-    session: WaFlowSession,
-    flow: WaFlow,
-    conversation: WaConversation,
-    contact: WaContact,
-  ): Promise<void> {
-    const workspaceId = conversation.workspaceId;
-    session.currentNodeId = node.id;
-    await this.sessionRepo.save(session);
-
-    switch (node.type) {
-      case 'trigger': {
-        const next = this.followEdge(flow, node.id);
-        await this.advanceToNext(next, session, flow, conversation, contact);
-        break;
-      }
-
-      case 'send_message': {
-        const text = this.substituteVars(
-          (node.data['message'] as string | null | undefined) ?? '',
-          session,
-          contact,
-        );
-        try {
-          await this.sendService.send(workspaceId, conversation.id, {
-            type: 'text',
-            text,
-          });
-        } catch (err) {
-          this.logger.warn(
-            `flow send_message failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-        const next = this.followEdge(flow, node.id);
-        await this.advanceToNext(next, session, flow, conversation, contact);
-        break;
-      }
-
-      case 'set_field': {
-        const field = (node.data['field'] as string | null | undefined) ?? '';
-        const value = this.substituteVars(
-          (node.data['value'] as string | null | undefined) ?? '',
-          session,
-          contact,
-        );
-        if (field) {
-          session.variables = { ...session.variables, [field]: value };
-          await this.sessionRepo.save(session);
-        }
-        const next = this.followEdge(flow, node.id);
-        await this.advanceToNext(next, session, flow, conversation, contact);
-        break;
-      }
-
-      case 'add_tag': {
-        const tag = (node.data['tag'] as string | null | undefined) ?? '';
-        if (tag && !contact.tags.includes(tag)) {
-          contact.tags = [...contact.tags, tag];
-          await this.contacts.save(contact);
-        }
-        const next = this.followEdge(flow, node.id);
-        await this.advanceToNext(next, session, flow, conversation, contact);
-        break;
-      }
-
-      case 'remove_tag': {
-        const tag = (node.data['tag'] as string | null | undefined) ?? '';
-        if (tag) {
-          contact.tags = contact.tags.filter((t) => t !== tag);
-          await this.contacts.save(contact);
-        }
-        const next = this.followEdge(flow, node.id);
-        await this.advanceToNext(next, session, flow, conversation, contact);
-        break;
-      }
-
-      case 'change_stage': {
-        contact.pipelineStageId =
-          (node.data['stageId'] as string | null) ?? null;
-        await this.contacts.save(contact);
-        const next = this.followEdge(flow, node.id);
-        await this.advanceToNext(next, session, flow, conversation, contact);
-        break;
-      }
-
-      case 'assign_agent': {
-        conversation.assignedToUserId =
-          (node.data['userId'] as string | null) ?? null;
-        await this.conversations.save(conversation);
-        session.status = 'exited';
-        await this.sessionRepo.save(session);
-        break;
-      }
-
-      case 'end': {
-        session.status = 'completed';
-        await this.sessionRepo.save(session);
-        break;
-      }
-
-      case 'wait_for_reply': {
-        session.waitingForReply = true;
-        await this.sessionRepo.save(session);
-        break;
-      }
-
-      case 'button_branch': {
-        const body = (node.data['body'] as string | null | undefined) ?? '';
-        const options =
-          (node.data['options'] as
-            | Array<{ id: string; title: string }>
-            | undefined) ?? [];
-        try {
-          await this.sendService.sendInteractive(workspaceId, conversation.id, {
-            interactiveType: 'button',
-            body,
-            buttons: options,
-          });
-        } catch (err) {
-          this.logger.warn(
-            `flow button_branch send failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          try {
-            await this.sendService.send(workspaceId, conversation.id, {
-              type: 'text',
-              text: body,
-            });
-          } catch (e2) {
-            this.logger.warn(
-              `flow button_branch fallback failed conv=${conversation.id}: ${e2 instanceof Error ? e2.message : String(e2)}`,
-            );
-          }
-        }
-        session.waitingForReply = true;
-        await this.sessionRepo.save(session);
-        break;
-      }
-
-      case 'list_branch': {
-        const body = (node.data['body'] as string | null | undefined) ?? '';
-        const buttonLabel =
-          (node.data['buttonLabel'] as string | null | undefined) ?? 'Choose';
-        const options =
-          (node.data['options'] as
-            | Array<{ id: string; title: string }>
-            | undefined) ?? [];
-        try {
-          await this.sendService.sendInteractive(workspaceId, conversation.id, {
-            interactiveType: 'list',
-            body,
-            buttonLabel,
-            sections: [{ rows: options }],
-          });
-        } catch (err) {
-          this.logger.warn(
-            `flow list_branch send failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          try {
-            await this.sendService.send(workspaceId, conversation.id, {
-              type: 'text',
-              text: body,
-            });
-          } catch (e2) {
-            this.logger.warn(
-              `flow list_branch fallback failed conv=${conversation.id}: ${e2 instanceof Error ? e2.message : String(e2)}`,
-            );
-          }
-        }
-        session.waitingForReply = true;
-        await this.sessionRepo.save(session);
-        break;
-      }
-
-      case 'condition': {
-        const variable =
-          (node.data['variable'] as string | null | undefined) ?? '';
-        const operator =
-          (node.data['operator'] as string | null | undefined) ?? 'equals';
-        const value = (node.data['value'] as string | null | undefined) ?? '';
-        const actual = session.variables[variable] ?? '';
-
-        let passes = false;
-        if (operator === 'equals') passes = actual === value;
-        else if (operator === 'contains')
-          passes = actual.toLowerCase().includes(value.toLowerCase());
-        else if (operator === 'not_equals') passes = actual !== value;
-
-        const next = this.followEdge(flow, node.id, passes ? 'yes' : 'no');
-        await this.advanceToNext(next, session, flow, conversation, contact);
-        break;
-      }
-
-      default: {
-        const next = this.followEdge(flow, node.id);
-        await this.advanceToNext(next, session, flow, conversation, contact);
-      }
-    }
-  }
-
-  private followEdge(
-    flow: WaFlow,
-    fromNodeId: string,
-    handleId?: string,
-  ): string | null {
-    const edge = flow.edges.find(
-      (e) =>
-        e.source === fromNodeId &&
-        (handleId !== undefined ? e.sourceHandle === handleId : true),
-    );
-    return edge?.target ?? null;
-  }
-
-  private async advanceToNext(
-    nextId: string | null,
-    session: WaFlowSession,
-    flow: WaFlow,
-    conversation: WaConversation,
-    contact: WaContact,
-  ): Promise<void> {
-    if (nextId) {
-      await this.executeFrom(session, flow, nextId, conversation, contact);
-    } else if (session.status === 'active') {
-      session.status = 'completed';
-      await this.sessionRepo.save(session);
-    }
-  }
-
   private async resumeSession(
     session: WaFlowSession,
     replyCtx: ReplyContext,
@@ -2310,8 +2068,8 @@ export class WaWebhookProcessor extends WorkerHost {
           | undefined) ?? [];
       const matchedId = options.find((o) => o.id === replyCtx.buttonId)?.id;
       nextId =
-        this.followEdge(flow, node.id, matchedId) ??
-        this.followEdge(flow, node.id);
+        this.flowRunner.followEdge(flow, node.id, matchedId) ??
+        this.flowRunner.followEdge(flow, node.id);
     } else if (node.type === 'list_branch') {
       const options =
         (node.data['options'] as
@@ -2319,27 +2077,26 @@ export class WaWebhookProcessor extends WorkerHost {
           | undefined) ?? [];
       const matchedId = options.find((o) => o.id === replyCtx.listRowId)?.id;
       nextId =
-        this.followEdge(flow, node.id, matchedId) ??
-        this.followEdge(flow, node.id);
+        this.flowRunner.followEdge(flow, node.id, matchedId) ??
+        this.flowRunner.followEdge(flow, node.id);
     } else {
       nextId =
-        this.followEdge(flow, node.id, 'replied') ??
-        this.followEdge(flow, node.id);
+        this.flowRunner.followEdge(flow, node.id, 'replied') ??
+        this.flowRunner.followEdge(flow, node.id);
     }
 
-    await this.advanceToNext(nextId, session, flow, conversation, contact);
-  }
-
-  private substituteVars(
-    template: string,
-    session: WaFlowSession,
-    contact: WaContact,
-  ): string {
-    return template
-      .replace(/\{\{contact\.name\}\}/g, contact.name ?? '')
-      .replace(/\{\{contact\.phone\}\}/g, contact.phoneE164 ?? '')
-      .replace(/\{\{contact\.email\}\}/g, contact.email ?? '')
-      .replace(/\{\{reply\}\}/g, session.variables['reply'] ?? '');
+    if (nextId) {
+      await this.flowRunner.executeFrom(
+        session,
+        flow,
+        nextId,
+        conversation,
+        contact,
+      );
+    } else if (session.status === 'active') {
+      session.status = 'completed';
+      await this.sessionRepo.save(session);
+    }
   }
 }
 

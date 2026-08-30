@@ -4,6 +4,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
 } from 'class-validator';
 import type {
   CampaignAudienceCsvEntry,
@@ -33,8 +34,16 @@ export class CreateCampaignDto {
   scheduledAt?: string;
 
   @IsOptional()
+  @IsString()
+  headerMediaUrl?: string;
+
+  @IsOptional()
   @IsObject()
   variableMapping?: Record<string, string>;
+
+  @IsOptional()
+  @IsUUID()
+  flowId?: string;
 }
 
 /**
@@ -58,6 +67,7 @@ export class CampaignResponseDto {
   completedAt!: string | null;
   stats!: CampaignStats;
   skippedOptedOut!: number;
+  flowId!: string | null;
   createdAt!: string;
   updatedAt!: string;
 }
@@ -85,6 +95,14 @@ export class UpdateCampaignDto {
   scheduledAt?: string | null;
 
   @IsOptional()
+  @IsString()
+  headerMediaUrl?: string | null;
+
+  @IsOptional()
   @IsObject()
   variableMapping?: Record<string, string>;
+
+  @IsOptional()
+  @IsUUID()
+  flowId?: string | null;
 }

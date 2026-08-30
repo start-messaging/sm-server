@@ -40,6 +40,15 @@ export class WhatsappCampaignsController {
     return this.campaignsService.list(ctx.workspace.id);
   }
 
+  @Get('last-marketing-send')
+  @ApiOperation({ summary: 'Get last marketing campaign send timestamp' })
+  getLastMarketingSend(
+    @Param('slug') _slug: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+  ) {
+    return this.campaignsService.getLastMarketingSend(ctx.workspace.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get campaign by ID' })
   getById(

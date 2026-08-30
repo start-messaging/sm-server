@@ -143,4 +143,8 @@ export class WaMessage extends BaseEntity {
   /** Full interactive payload (sent or received) for re-rendering without hitting Meta. */
   @Column({ name: 'interactive_data', type: 'jsonb', nullable: true })
   interactiveData!: InteractiveData | null;
+
+  /** UUID of the workspace member who sent this message (outbound only; null for automated/campaign sends). */
+  @Column({ name: 'sender_id', type: 'uuid', nullable: true })
+  senderId!: string | null;
 }

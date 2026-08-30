@@ -185,6 +185,7 @@ export class WhatsappConnectService {
           wabaInfo.account_review_status?.toUpperCase() ?? null,
         businessVerificationStatus:
           wabaInfo.business_verification_status ?? null,
+        metaPaymentReady: wabaInfo.payment_method_attached ?? null,
         rawMetadata: wabaInfo as unknown as Record<string, unknown>,
       });
       await em.save(waba);
@@ -401,6 +402,20 @@ export class WhatsappConnectService {
       this.logger.log(
         `[sync] workspace ${workspaceId} retired after Meta pull-sync`,
       );
+    } else {
+      try {
+        const accessToken = decryptToken(waba.accessTokenEncrypted);
+        const freshWaba = await this.meta.getWaba(waba.metaWabaId, accessToken);
+        if (freshWaba.payment_method_attached !== undefined) {
+          await this.wabaAccounts.update(waba.id, {
+            metaPaymentReady: freshWaba.payment_method_attached,
+          });
+        }
+      } catch (e) {
+        this.logger.warn(
+          `[sync] payment_method_attached fetch failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
     }
 
     return this.getStatus(workspaceId);

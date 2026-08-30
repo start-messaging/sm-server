@@ -15,6 +15,7 @@ import { WaMessage } from '../entities/wa-message.entity';
 import { WaTemplate } from '../entities/wa-template.entity';
 import { decryptToken } from '../crypto/token-encryption';
 import { MetaGraphClient } from '../services/meta-graph.client';
+import { WhatsappFlowsService } from '../services/whatsapp-flows.service';
 import { AppException } from '../../common/exceptions/app.exception';
 import { WA_CAMPAIGN_QUEUE } from './wa-campaign.constants';
 
@@ -53,6 +54,7 @@ export class WaCampaignProcessor extends WorkerHost {
 
   constructor(
     private readonly meta: MetaGraphClient,
+    private readonly flowsService: WhatsappFlowsService,
     @InjectRepository(WaCampaign)
     private readonly campaigns: Repository<WaCampaign>,
     @InjectRepository(WaContact)
@@ -165,6 +167,11 @@ export class WaCampaignProcessor extends WorkerHost {
           continue;
         }
 
+        const allComponents = this.buildAllComponents(
+          built.components,
+          campaign,
+        );
+
         try {
           const result = await this.meta.sendMessage(
             phone.metaPhoneNumberId,
@@ -174,9 +181,7 @@ export class WaCampaignProcessor extends WorkerHost {
               template: {
                 name: campaign.templateName,
                 language: { code: campaign.templateLanguage },
-                ...(built.components.length
-                  ? { components: built.components }
-                  : {}),
+                ...(allComponents.length ? { components: allComponents } : {}),
               },
             },
             token,
@@ -191,7 +196,7 @@ export class WaCampaignProcessor extends WorkerHost {
 
           const hydratedBody = this.hydrateBody(
             templateBodyText,
-            built.components[0]?.parameters ?? [],
+            built.components.find((c) => c.type === 'body')?.parameters ?? [],
           );
 
           const message = this.messages.create({
@@ -208,6 +213,20 @@ export class WaCampaignProcessor extends WorkerHost {
           await this.messages.save(message);
 
           campaign.stats = { ...campaign.stats, sent: campaign.stats.sent + 1 };
+
+          if (campaign.flowId) {
+            try {
+              await this.flowsService.enrollContact(
+                campaign.flowId,
+                conversation.id,
+                campaign.workspaceId,
+              );
+            } catch (e) {
+              this.logger.warn(
+                `[campaign] flow enroll failed for ${conversation.id}: ${String(e)}`,
+              );
+            }
+          }
         } catch (err) {
           const { code, reason, billing } = this.extractMetaError(err);
 
@@ -223,7 +242,7 @@ export class WaCampaignProcessor extends WorkerHost {
             code,
             reason,
             templateBodyText,
-            built.components[0]?.parameters ?? [],
+            built.components.find((c) => c.type === 'body')?.parameters ?? [],
           );
 
           if (billing) {
@@ -259,6 +278,41 @@ export class WaCampaignProcessor extends WorkerHost {
     this.logger.log(
       `Campaign ${campaignId} completed: ${JSON.stringify(done.stats)}`,
     );
+  }
+
+  /**
+   * Merge HEADER (if the campaign has a media URL and the template has a
+   * non-TEXT header) with the BODY components built per-recipient.
+   */
+  private buildAllComponents(
+    bodyComponents: Array<{
+      type: 'body';
+      parameters: Array<{ type: 'text'; text: string }>;
+    }>,
+    campaign: WaCampaign,
+  ): unknown[] {
+    const components: unknown[] = [];
+
+    if (campaign.headerMediaUrl) {
+      // Derive media type from template body lookup is unreliable — use a
+      // heuristic based on the URL extension or fall back to 'image'.
+      const url = campaign.headerMediaUrl.toLowerCase();
+      const mediaType = url.match(/\.(mp4|mov|avi|webm)(\?|$)/)
+        ? 'video'
+        : url.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx)(\?|$)/)
+          ? 'document'
+          : 'image';
+
+      components.push({
+        type: 'header',
+        parameters: [
+          { type: mediaType, [mediaType]: { link: campaign.headerMediaUrl } },
+        ],
+      });
+    }
+
+    components.push(...bodyComponents);
+    return components;
   }
 
   /**

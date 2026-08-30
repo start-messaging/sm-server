@@ -103,6 +103,18 @@ export class WhatsappFlowsController {
     return WhatsappFlowsService.serialize(flow);
   }
 
+  @Post(':id/trigger')
+  @MinRole(WorkspaceRole.MANAGER)
+  @ApiOperation({ summary: 'Manually trigger a flow on a contact' })
+  async triggerOnContact(
+    @Param('slug') _slug: string,
+    @Param('id') id: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @Body() body: { contactId: string },
+  ) {
+    return this.service.triggerOnContact(id, body.contactId, ctx.workspace.id);
+  }
+
   /** No plan gate: a downgraded workspace must always be able to switch a bot off. */
   @Post(':id/deactivate')
   @MinRole(WorkspaceRole.MANAGER)

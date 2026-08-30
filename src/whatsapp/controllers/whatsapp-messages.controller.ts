@@ -156,7 +156,7 @@ export class WhatsappMessagesController {
       ctx.workspace.id,
       conversationId,
       dto as SendMessageInput,
-      { bypassOptOutGate: true },
+      { bypassOptOutGate: true, senderId: ctx.membership.userId },
     );
   }
 
@@ -226,6 +226,7 @@ export class WhatsappMessagesController {
       ctx.workspace.id,
       conversationId,
       dto,
+      ctx.membership.userId,
     );
   }
 

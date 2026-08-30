@@ -9,6 +9,7 @@ export type FlowNodeType =
   | 'trigger'
   | 'send_message'
   | 'wait_for_reply'
+  | 'wait_delay'
   | 'button_branch'
   | 'list_branch'
   | 'condition'

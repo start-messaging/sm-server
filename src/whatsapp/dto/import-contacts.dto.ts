@@ -1,4 +1,10 @@
-import { IsArray, IsObject, IsOptional } from 'class-validator';
+import {
+  IsArray,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 /**
  * Field-mapped CSV import: the client parses the CSV itself and posts the raw
@@ -17,4 +23,9 @@ export class ImportContactsDto {
   @IsOptional()
   @IsObject()
   mapping?: Record<string, string>;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  filenameTag?: string;
 }

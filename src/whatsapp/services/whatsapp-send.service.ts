@@ -59,6 +59,8 @@ export interface SendOptions {
    * even though they are now marked opted out.
    */
   bypassOptOutGate?: boolean;
+  /** The workspace member user ID who triggered this send (for analytics). */
+  senderId?: string;
 }
 
 /**
@@ -197,6 +199,7 @@ export class WhatsappSendService {
       templateName: input.type === 'template' ? input.templateName : null,
       timestamp: new Date(),
       metaMessageId,
+      senderId: options?.senderId ?? null,
       ...(mediaUploadMeta
         ? {
             mediaType: mediaUploadMeta.mediaType,
@@ -238,6 +241,7 @@ export class WhatsappSendService {
     workspaceId: string,
     conversationId: string,
     dto: SendInteractiveDto,
+    senderId?: string,
   ) {
     const waba = await this.requireWaba(workspaceId);
     const phone = await this.requireActivePhone(workspaceId);
@@ -297,6 +301,7 @@ export class WhatsappSendService {
       mediaMime: null,
       mediaFilename: null,
       messageType,
+      senderId: senderId ?? null,
       interactiveData: {
         interactiveType: dto.interactiveType,
         body: dto.body,

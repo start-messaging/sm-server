@@ -19,6 +19,7 @@ import { WorkspaceMember } from '../../workspaces/entities/workspace-member.enti
 import { Workspace } from '../../workspaces/entities/workspace.entity';
 import { WA_WEBHOOK_QUEUE } from './wa-webhook.constants';
 import { WaWebhookProcessor } from './wa-webhook.processor';
+import { WaFlowResumeQueueModule } from './wa-flow-resume-queue.module';
 import { WhatsappRealtimeModule } from '../realtime/whatsapp-realtime.module';
 import { MetaGraphClient } from '../services/meta-graph.client';
 import { WhatsappMediaService } from '../services/whatsapp-media.service';
@@ -29,6 +30,7 @@ import { R2UploadService } from '../../common/services/r2-upload.service';
 @Module({
   imports: [
     BullModule.registerQueue({ name: WA_WEBHOOK_QUEUE }),
+    WaFlowResumeQueueModule,
     TypeOrmModule.forFeature([
       WaWebhookEvent,
       WaConversation,
@@ -57,6 +59,6 @@ import { R2UploadService } from '../../common/services/r2-upload.service';
     WhatsappAutoRepliesService,
     R2UploadService,
   ],
-  exports: [BullModule],
+  exports: [BullModule, WaFlowResumeQueueModule],
 })
 export class WaWebhookQueueModule {}

@@ -5,15 +5,21 @@ import {
   Get,
   Param,
   Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import {
   ApiBearerAuth,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { AppException } from '../../common/exceptions/app.exception';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
 import { WorkspaceMemberGuard } from '../../workspaces/guards/workspace-member.guard';
@@ -28,6 +34,36 @@ import { WaTemplateDto, WaTemplateListDto } from '../dto/wa-template.dto';
 @ApiBearerAuth()
 export class WhatsappTemplatesController {
   constructor(private readonly templatesService: WhatsappTemplatesService) {}
+
+  @Post('media-upload')
+  @ApiOperation({
+    summary: 'Upload template header media via Meta Resumable Upload API',
+  })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 50 * 1024 * 1024 },
+    }),
+  )
+  async uploadTemplateMedia(
+    @Param('slug') _slug: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new AppException(
+        { code: 'VALIDATION_ERROR', message: 'No file uploaded' },
+        400,
+      );
+    }
+    return this.templatesService.uploadTemplateMedia(
+      ctx.workspace.id,
+      file.buffer,
+      file.mimetype,
+      file.size,
+    );
+  }
 
   @Get()
   @ApiOperation({ summary: 'List templates' })
