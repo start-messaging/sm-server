@@ -220,17 +220,49 @@ export class WhatsappAnalyticsService {
     );
 
     const FIX_MAP: Record<string, string> = {
-      '131008':
-        'A template variable was empty for this contact. Use a fixed fallback or ensure the contact field has a value.',
-      '131026':
-        'The contact had not messaged you within 24 hours. Use a template message to re-open the window.',
-      '131047':
-        'The template was rejected or paused by Meta. Check its status in the Templates page.',
-      '131053':
-        "You hit Meta's messaging rate limit. Space out your campaign sends.",
+      '0': 'An unknown error occurred. Retry the send or contact support if it persists.',
+      '1': "An unknown error occurred on Meta's side. Retry after a few minutes.",
+      '2': 'Temporary Meta service issue. Retry after a few minutes.',
+      '3': 'Unsupported request. Check that your WABA has the required permissions.',
+      '4': 'Too many requests sent in a short time. Reduce your send rate.',
+      '10': 'Permission denied. Your WhatsApp Business Account may lack the required permission.',
+      '100': 'Invalid request parameter. Check that template name, language, and variables are correct.',
+      '130429': 'Rate limit hit. You are sending too many messages. Space out your sends and consider reducing campaign audience size.',
+      '130472': 'User number is not registered on WhatsApp. Skip this contact.',
+      '131000': 'Generic Meta error. Retry the send; if it keeps failing check your WABA status.',
+      '131005': "Permission denied. Your WABA doesn't have the required capability for this message type.",
+      '131006': 'Template not found or inactive. Ensure the template is approved and the language code matches.',
+      '131008': 'A template variable was empty for this contact. Add a fallback value or ensure all required contact fields are filled.',
+      '131009': "Invalid parameter value. Check that button URL parameters and variables follow Meta's format rules.",
+      '131016': 'The service is temporarily unavailable. Retry after a few minutes.',
+      '131021': "Recipient phone number is not a WhatsApp user or doesn't exist.",
+      '131026': 'Message not delivered — the contact may not have WhatsApp or the number is invalid.',
+      '131042': 'The business account has restrictions. Check your WABA status in Meta Business Manager.',
+      '131045': "The sender's WhatsApp phone number is not registered. Re-register the number in your WABA settings.",
+      '131047': 'Template paused or rejected by Meta. Go to the Templates page and check the template status.',
+      '131048': 'Sending template messages requires a payment method. Add one at business.facebook.com/settings/payment-methods.',
+      '131049': 'This message was not delivered to maintain a healthy ecosystem. Reduce marketing frequency and ensure opt-out is honoured.',
+      '131051': 'Unsupported message type for this contact.',
+      '131052': "Media download failed on Meta's side. Use a publicly accessible URL for media.",
+      '131053': 'Daily messaging limit reached. Space out your campaign sends or apply for a higher limit in Meta Business Manager.',
+      '131056': 'Too many messages to this number in a short period. Space out sends to this contact.',
+      '132000': 'Template variable count mismatch. Ensure your campaign variable mapping covers all template variables.',
+      '132001': 'Template not found. Sync your templates and ensure the name/language is correct.',
+      '132005': 'Template hydration failed — a required variable was missing. Check variable mapping.',
+      '132007': 'Template content policy violation. The template may have been flagged by Meta.',
+      '132012': 'Template button URL parameter missing or malformed.',
+      '132015': 'Template is paused due to quality issues. Reduce marketing frequency and improve content.',
+      '132016': 'Template has been disabled. Create a new template with improved content.',
+      '133000': 'Incomplete deregistration. Re-register your phone number to continue sending.',
+      '133004': 'Server is temporarily unavailable. Retry after a few minutes.',
+      '133005': 'Two-step verification PIN was wrong. Update the PIN in your WABA settings.',
+      '133006': 'Phone number needs re-registration. Go to the Connect page and re-register.',
+      '133008': 'Too many PIN attempts. Wait before retrying.',
+      '133009': 'PIN must be provided during registration.',
+      '135000': "Generic user error. Retry; if it persists, check the contact's number.",
     };
     const DEFAULT_FIX =
-      "Unknown error. Check Meta's error documentation at https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes";
+      "Review the error reason above and check Meta's error code reference at https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes";
 
     return {
       errors: rows.map((r) => ({

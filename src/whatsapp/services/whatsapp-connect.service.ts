@@ -394,6 +394,21 @@ export class WhatsappConnectService {
       return this.getStatus(workspaceId);
     }
 
+    // Always try to refresh payment status — don't gate it behind live-check
+    try {
+      const accessToken = decryptToken(waba.accessTokenEncrypted);
+      const freshWaba = await this.meta.getWaba(waba.metaWabaId, accessToken);
+      if (freshWaba.payment_method_attached !== undefined) {
+        await this.wabaAccounts.update(waba.id, {
+          metaPaymentReady: freshWaba.payment_method_attached,
+        });
+      }
+    } catch (e) {
+      this.logger.warn(
+        `[sync] payment_method_attached fetch failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+
     const stillLive = await this.checkMetaConnectionAlive(waba, phone);
     if (!stillLive) {
       await this.ds.transaction(async (em) => {
@@ -402,20 +417,6 @@ export class WhatsappConnectService {
       this.logger.log(
         `[sync] workspace ${workspaceId} retired after Meta pull-sync`,
       );
-    } else {
-      try {
-        const accessToken = decryptToken(waba.accessTokenEncrypted);
-        const freshWaba = await this.meta.getWaba(waba.metaWabaId, accessToken);
-        if (freshWaba.payment_method_attached !== undefined) {
-          await this.wabaAccounts.update(waba.id, {
-            metaPaymentReady: freshWaba.payment_method_attached,
-          });
-        }
-      } catch (e) {
-        this.logger.warn(
-          `[sync] payment_method_attached fetch failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
     }
 
     return this.getStatus(workspaceId);

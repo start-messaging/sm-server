@@ -14,6 +14,7 @@ import { MetaGraphClient } from '../services/meta-graph.client';
 import { WhatsappFlowsService } from '../services/whatsapp-flows.service';
 import { WA_CAMPAIGN_QUEUE } from './wa-campaign.constants';
 import { WaCampaignProcessor } from './wa-campaign.processor';
+import { WaFlowResumeQueueModule } from './wa-flow-resume-queue.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { WaCampaignProcessor } from './wa-campaign.processor';
       WaFlow,
       WaFlowSession,
     ]),
+    WaFlowResumeQueueModule,
   ],
   providers: [WaCampaignProcessor, MetaGraphClient, WhatsappFlowsService],
   exports: [BullModule],

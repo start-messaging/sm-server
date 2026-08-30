@@ -20,6 +20,7 @@ import { WhatsappInboxSettingsController } from './controllers/whatsapp-inbox-se
 import { WhatsappInboxPresenceController } from './controllers/whatsapp-inbox-presence.controller';
 import { WhatsappAnalyticsController } from './controllers/whatsapp-analytics.controller';
 import { WhatsappApiKeysController } from './controllers/whatsapp-api-keys.controller';
+import { WhatsappMetaFlowsController } from './controllers/whatsapp-meta-flows.controller';
 import { WhatsappTriggerController } from './controllers/whatsapp-trigger.controller';
 import { WhatsappRealtimeModule } from './realtime/whatsapp-realtime.module';
 import { PhoneNumber } from './entities/phone-number.entity';
@@ -41,6 +42,7 @@ import { WaPipelineStageTemplate } from './entities/wa-pipeline-stage-template.e
 import { WaFlow } from './entities/wa-flow.entity';
 import { WaFlowSession } from './entities/wa-flow-session.entity';
 import { WaApiKey } from './entities/wa-api-key.entity';
+import { WaMetaFlow } from './entities/wa-meta-flow.entity';
 import { WaAutoReplyRule } from './auto-replies/wa-auto-reply-rule.entity';
 import { WhatsappAutoRepliesService } from './auto-replies/whatsapp-auto-replies.service';
 import { WhatsappAutoRepliesController } from './auto-replies/whatsapp-auto-replies.controller';
@@ -67,6 +69,7 @@ import { WhatsappInboxPresenceService } from './services/whatsapp-inbox-presence
 import { WhatsappMediaService } from './services/whatsapp-media.service';
 import { WhatsappAnalyticsService } from './services/whatsapp-analytics.service';
 import { WhatsappApiKeysService } from './services/whatsapp-api-keys.service';
+import { WhatsappMetaFlowsService } from './services/whatsapp-meta-flows.service';
 import { R2UploadService } from '../common/services/r2-upload.service';
 import { WorkspaceService } from '../workspaces/entities/workspace-service.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
@@ -108,6 +111,7 @@ import { AdminModule } from '../admin/admin.module';
       WaFlow,
       WaFlowSession,
       WaApiKey,
+      WaMetaFlow,
       WorkspaceService,
       Workspace,
       WorkspaceMember,
@@ -145,6 +149,7 @@ import { AdminModule } from '../admin/admin.module';
     WhatsappInboxPresenceService,
     WhatsappAnalyticsService,
     WhatsappApiKeysService,
+    WhatsappMetaFlowsService,
     R2UploadService,
     WorkspaceMemberGuard,
     RequiresFeatureGuard,
@@ -170,6 +175,7 @@ import { AdminModule } from '../admin/admin.module';
     WhatsappInboxPresenceController,
     WhatsappAnalyticsController,
     WhatsappApiKeysController,
+    WhatsappMetaFlowsController,
     WhatsappTriggerController,
     AdminInboxOpsController,
     AdminPipelineStageTemplatesController,

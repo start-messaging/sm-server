@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppException } from '../../common/exceptions/app.exception';
+import { R2UploadService } from '../../common/services/r2-upload.service';
 import { decryptToken } from '../crypto/token-encryption';
 import { WabaAccount } from '../entities/waba-account.entity';
 import {
@@ -33,6 +34,7 @@ export class WhatsappTemplatesService {
 
   constructor(
     private readonly meta: MetaGraphClient,
+    private readonly r2: R2UploadService,
     @InjectRepository(WaTemplate)
     private readonly templates: Repository<WaTemplate>,
     @InjectRepository(WabaAccount)
@@ -45,6 +47,26 @@ export class WhatsappTemplatesService {
       order: { createdAt: 'DESC' },
     });
     return { templates: templates.map(toWaTemplateDto), total };
+  }
+
+  /** Upload a file to R2 and return its public URL. Used for header media in campaigns/inbox. */
+  async uploadMediaSample(
+    workspaceId: string,
+    buffer: Buffer,
+    mimeType: string,
+    filename: string,
+  ): Promise<{ url: string }> {
+    const key = `wa-templates/${workspaceId}/${Date.now()}-${filename}`;
+    try {
+      const url = await this.r2.upload(key, buffer, mimeType);
+      return { url };
+    } catch (err) {
+      this.logger.error(`R2 media sample upload failed: ${String(err)}`);
+      throw new AppException(
+        { code: 'MEDIA_UPLOAD_FAILED', message: 'Failed to upload media. Please try again.' },
+        502,
+      );
+    }
   }
 
   async create(workspaceId: string, dto: CreateTemplateDto) {

@@ -35,6 +35,8 @@ export interface SendTemplateInput {
   templateName: string;
   templateLanguage: string;
   parameters?: Record<string, string>[];
+  /** Public URL for the template header media (IMAGE/VIDEO/DOCUMENT). */
+  headerMediaUrl?: string;
 }
 
 export interface SendMediaInput {
@@ -381,23 +383,35 @@ export class WhatsappSendService {
     }
 
     if (input.type === 'template') {
+      const components: object[] = [];
+      if (input.headerMediaUrl) {
+        const url = input.headerMediaUrl.toLowerCase();
+        const mediaType = url.match(/\.(mp4|3gpp?)$/i)
+          ? 'video'
+          : url.match(/\.(pdf|docx?|xlsx?|txt)$/i)
+            ? 'document'
+            : 'image';
+        components.push({
+          type: 'header',
+          parameters: [{ type: mediaType, [mediaType]: { link: input.headerMediaUrl } }],
+        });
+      }
+      if (input.parameters?.length) {
+        components.push({
+          type: 'body',
+          parameters: input.parameters.map((p) => ({
+            type: 'text' as const,
+            text: p['text'] ?? Object.values(p)[0] ?? '',
+          })),
+        });
+      }
       return {
         to: phone,
         type: 'template',
         template: {
           name: input.templateName,
           language: { code: input.templateLanguage },
-          components: input.parameters?.length
-            ? [
-                {
-                  type: 'body',
-                  parameters: input.parameters.map((p) => ({
-                    type: 'text' as const,
-                    text: p['text'] ?? Object.values(p)[0] ?? '',
-                  })),
-                },
-              ]
-            : undefined,
+          components: components.length ? components : undefined,
         },
       };
     }

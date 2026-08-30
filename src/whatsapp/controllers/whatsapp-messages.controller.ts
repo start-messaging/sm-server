@@ -42,6 +42,7 @@ import { SendInteractiveDto } from '../dto/send-interactive.dto';
 import { CreateConversationDto } from '../dto/create-conversation.dto';
 import { PatchConversationDto } from '../dto/patch-conversation.dto';
 import { WA_ERR } from '../whatsapp-error-codes';
+import { WhatsappTemplatesService } from '../services/whatsapp-templates.service';
 
 /** 100 MB absolute upload cap on our side (Meta per-type limits enforced in service). */
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -54,6 +55,7 @@ export class WhatsappMessagesController {
   constructor(
     private readonly messagesService: WhatsappMessagesService,
     private readonly sendService: WhatsappSendService,
+    private readonly templatesService: WhatsappTemplatesService,
   ) {}
 
   @Post()
@@ -145,17 +147,43 @@ export class WhatsappMessagesController {
   @Post(':conversationId/messages')
   @MinRole(WorkspaceRole.AGENT)
   @RequiresFeature(PLAN_FEATURE_KEYS.agentInbox)
-  @ApiOperation({ summary: 'Send a message (text or template)' })
-  sendMessage(
+  @ApiOperation({ summary: 'Send a message (text or template). Accepts JSON or multipart/form-data with an optional headerFile for media-header templates.' })
+  @UseInterceptors(FileInterceptor('headerFile', { storage: memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } }))
+  async sendMessage(
     @Param('slug') _slug: string,
     @Param('conversationId') conversationId: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
     @Body() dto: SendMessageDto,
+    @UploadedFile() headerFile?: Express.Multer.File,
   ) {
+    let headerMediaUrl = dto.headerMediaUrl;
+    if (headerFile?.buffer?.length) {
+      const { url } = await this.templatesService.uploadMediaSample(
+        ctx.workspace.id,
+        headerFile.buffer,
+        headerFile.mimetype,
+        headerFile.originalname ?? 'header',
+      );
+      headerMediaUrl = url;
+    }
+    const parameters: Record<string, string>[] | undefined =
+      typeof dto.parameters === 'string'
+        ? (JSON.parse(dto.parameters as unknown as string) as Record<string, string>[])
+        : dto.parameters;
+    const input: SendMessageInput =
+      dto.type === 'template'
+        ? {
+            type: 'template',
+            templateName: dto.templateName!,
+            templateLanguage: dto.templateLanguage!,
+            parameters,
+            headerMediaUrl,
+          }
+        : { type: 'text', text: dto.text! };
     return this.sendService.send(
       ctx.workspace.id,
       conversationId,
-      dto as SendMessageInput,
+      input,
       { bypassOptOutGate: true, senderId: ctx.membership.userId },
     );
   }

@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUrl,
   ValidateIf,
 } from 'class-validator';
 
@@ -28,4 +29,9 @@ export class SendMessageDto {
 
   @IsOptional()
   parameters?: Record<string, string>[];
+
+  /** Public URL for the template header media (IMAGE/VIDEO/DOCUMENT). */
+  @IsOptional()
+  @IsUrl()
+  headerMediaUrl?: string;
 }

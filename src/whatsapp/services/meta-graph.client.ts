@@ -141,6 +141,18 @@ export class MetaGraphClient {
     await this.post<unknown>(url, {}, accessToken);
   }
 
+  // ── Flows ────────────────────────────────────────────────────────────────
+
+  /** Fetch all WhatsApp Flows under a WABA. */
+  async listMetaFlows(
+    wabaId: string,
+    accessToken: string,
+  ): Promise<MetaFlowInfo[]> {
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/flows?fields=id,name,status,categories,validation_errors`;
+    const res = await this.get<{ data: MetaFlowInfo[] }>(url, accessToken);
+    return res.data ?? [];
+  }
+
   // ── Templates ───────────────────────────────────────────────────────────
 
   /** Fetch all message templates under a WABA. */
@@ -485,6 +497,14 @@ export interface MetaSendMessageResult {
   messaging_product: string;
   contacts: Array<{ input: string; wa_id: string }>;
   messages: Array<{ id: string }>;
+}
+
+export interface MetaFlowInfo {
+  id: string;
+  name: string;
+  status: 'DRAFT' | 'PUBLISHED' | 'DEPRECATED' | 'BLOCKED' | 'THROTTLED';
+  categories: string[];
+  validation_errors?: { error_type: string; message: string }[];
 }
 
 export interface MetaInteractivePayload {

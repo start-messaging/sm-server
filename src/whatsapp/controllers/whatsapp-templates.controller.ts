@@ -35,6 +35,34 @@ import { WaTemplateDto, WaTemplateListDto } from '../dto/wa-template.dto';
 export class WhatsappTemplatesController {
   constructor(private readonly templatesService: WhatsappTemplatesService) {}
 
+  @Post('media-sample')
+  @ApiOperation({ summary: 'Upload header media to R2; returns a public URL for use in campaigns/inbox sends' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 16 * 1024 * 1024 },
+    }),
+  )
+  async uploadMediaSample(
+    @Param('slug') _slug: string,
+    @CurrentWorkspace() ctx: WorkspaceContext,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new AppException(
+        { code: 'VALIDATION_ERROR', message: 'No file uploaded' },
+        400,
+      );
+    }
+    return this.templatesService.uploadMediaSample(
+      ctx.workspace.id,
+      file.buffer,
+      file.mimetype,
+      file.originalname ?? 'upload',
+    );
+  }
+
   @Post('media-upload')
   @ApiOperation({
     summary: 'Upload template header media via Meta Resumable Upload API',

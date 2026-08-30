@@ -6,8 +6,12 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentWorkspace } from '../../workspaces/decorators/current-workspace.decorator';
@@ -18,6 +22,7 @@ import { RequiresFeature } from '../guards/requires-feature.decorator';
 import { RequiresFeatureGuard } from '../guards/requires-feature.guard';
 import { WhatsappCampaignsService } from '../services/whatsapp-campaigns.service';
 import { WhatsappConnectService } from '../services/whatsapp-connect.service';
+import { WhatsappTemplatesService } from '../services/whatsapp-templates.service';
 import { CreateCampaignDto, UpdateCampaignDto } from '../dto/campaign.dto';
 import { CampaignAudienceCsvDto } from '../dto/campaign-audience-csv.dto';
 
@@ -29,6 +34,7 @@ export class WhatsappCampaignsController {
   constructor(
     private readonly campaignsService: WhatsappCampaignsService,
     private readonly connectService: WhatsappConnectService,
+    private readonly templatesService: WhatsappTemplatesService,
   ) {}
 
   @Get()
@@ -60,13 +66,39 @@ export class WhatsappCampaignsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create campaign' })
-  create(
+  @ApiOperation({ summary: 'Create campaign. Accepts JSON or multipart/form-data with optional headerFile for media-header templates.' })
+  @UseInterceptors(FileInterceptor('headerFile', { storage: memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } }))
+  async create(
     @Param('slug') _slug: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
     @Body() dto: CreateCampaignDto,
+    @UploadedFile() headerFile?: Express.Multer.File,
   ) {
-    return this.campaignsService.create(ctx.workspace.id, dto);
+    let headerMediaUrl = dto.headerMediaUrl ?? undefined;
+    if (headerFile?.buffer?.length) {
+      const { url } = await this.templatesService.uploadMediaSample(
+        ctx.workspace.id,
+        headerFile.buffer,
+        headerFile.mimetype,
+        headerFile.originalname ?? 'header',
+      );
+      headerMediaUrl = url;
+    }
+    // When sent as multipart, array/object fields arrive JSON-stringified.
+    const audienceIds: string[] =
+      typeof dto.audienceIds === 'string'
+        ? (JSON.parse(dto.audienceIds as unknown as string) as string[])
+        : (dto.audienceIds ?? []);
+    const variableMapping: Record<string, string> | undefined =
+      typeof dto.variableMapping === 'string'
+        ? (JSON.parse(dto.variableMapping as unknown as string) as Record<string, string>)
+        : dto.variableMapping;
+    return this.campaignsService.create(ctx.workspace.id, {
+      ...dto,
+      audienceIds,
+      variableMapping,
+      headerMediaUrl,
+    });
   }
 
   @Post(':id/duplicate')
