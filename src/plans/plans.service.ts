@@ -92,6 +92,7 @@ export class PlansService {
           status: dto.status ?? PlanStatus.ACTIVE,
           features: dto.features ?? {},
           limits: dto.limits ?? {},
+          roleGates: dto.roleGates ?? {},
         }),
       );
       this.logger.log(
@@ -130,6 +131,7 @@ export class PlansService {
     if (dto.status !== undefined) plan.status = dto.status;
     if (dto.features !== undefined) plan.features = dto.features;
     if (dto.limits !== undefined) plan.limits = dto.limits;
+    if (dto.roleGates !== undefined) plan.roleGates = dto.roleGates;
     const saved = await this.plans.save(plan);
     this.logger.log(
       {

@@ -457,7 +457,10 @@ export interface MetaTemplateCreated {
 export type MetaMediaMessageType = 'image' | 'audio' | 'video' | 'document';
 
 export interface MetaMediaObject {
-  id: string;
+  /** Reusable media id from an uploaded buffer. */
+  id?: string;
+  /** Public URL Meta fetches directly — mutually exclusive with `id`. */
+  link?: string;
   /** Optional caption — supported by image, video, document. */
   caption?: string;
   /** Filename hint for document downloads. */
@@ -477,7 +480,7 @@ export interface MetaSendMessageInput {
   /** Present when type = 'image'. */
   image?: MetaMediaObject;
   /** Present when type = 'audio' (no caption supported by Meta). */
-  audio?: { id: string };
+  audio?: MetaMediaObject;
   /** Present when type = 'video'. */
   video?: MetaMediaObject;
   /** Present when type = 'document'. */

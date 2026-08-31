@@ -317,7 +317,7 @@ export class WaCampaignProcessor extends WorkerHost {
 
   /**
    * Build Graph API BODY components from the campaign's variableMapping.
-   * Mapping values: `name` | `phone` | `attr:<key>` | `text:<literal>`.
+   * Mapping values: `name` | `phone` | `attr:<key>` | `<key>` | `text:<literal>`.
    * Empty resolved params must not be sent — Meta returns 131008.
    */
   private buildBodyComponents(
@@ -354,14 +354,13 @@ export class WaCampaignProcessor extends WorkerHost {
   ): string {
     if (field === 'name') return recipient.name ?? '';
     if (field === 'phone') return recipient.phoneE164;
-    if (field.startsWith('attr:')) {
-      const attrKey = field.slice('attr:'.length);
-      const raw = recipient.attributes?.[attrKey];
-      if (raw == null) return '';
-      return typeof raw === 'string' ? raw : JSON.stringify(raw);
-    }
     if (field.startsWith('text:')) return field.slice('text:'.length);
-    return '';
+    const attrKey = field.startsWith('attr:')
+      ? field.slice('attr:'.length)
+      : field;
+    const raw = recipient.attributes?.[attrKey];
+    if (raw == null) return '';
+    return typeof raw === 'string' ? raw : JSON.stringify(raw);
   }
 
   private async recordFailedSend(

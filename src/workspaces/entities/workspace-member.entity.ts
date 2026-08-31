@@ -20,6 +20,20 @@ export const ROLE_RANK: Record<WorkspaceRole, number> = {
   [WorkspaceRole.VIEWER]: 0,
 };
 
+/**
+ * Returns true when `memberRole` meets the minimum role gate set on `plan`
+ * for `featureKey`. Returns true when no gate is set (open access).
+ */
+export function rolePassesGate(
+  roleGates: Record<string, string>,
+  featureKey: string,
+  memberRole: WorkspaceRole,
+): boolean {
+  const minRole = roleGates[featureKey];
+  if (!minRole) return true;
+  return ROLE_RANK[memberRole] >= (ROLE_RANK[minRole as WorkspaceRole] ?? 0);
+}
+
 export enum MemberStatus {
   ACTIVE = 'active',
   INVITED = 'invited',

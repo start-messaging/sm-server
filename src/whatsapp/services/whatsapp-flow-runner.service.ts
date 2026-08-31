@@ -132,19 +132,105 @@ export class WhatsappFlowRunnerService {
       }
 
       case 'send_message': {
-        const text = this.substituteVars(
-          (node.data['message'] as string | null | undefined) ?? '',
-          session,
-          contact,
-        );
+        const messageType =
+          (node.data['messageType'] as string | undefined) ?? 'text';
         try {
-          await this.sendService.send(workspaceId, conversation.id, {
-            type: 'text',
-            text,
-          });
+          if (messageType === 'media') {
+            const mediaType =
+              (node.data['mediaType'] as string | undefined) ?? 'image';
+            await this.sendService.send(workspaceId, conversation.id, {
+              type: mediaType as 'image' | 'video' | 'document',
+              url: (node.data['mediaUrl'] as string | undefined) ?? '',
+              caption: this.substituteVars(
+                (node.data['mediaCaption'] as string | undefined) ?? '',
+                session,
+                contact,
+              ),
+            });
+          } else if (messageType === 'interactive') {
+            const interactiveType =
+              (node.data['interactiveType'] as string | undefined) ?? 'buttons';
+            const body = this.substituteVars(
+              (node.data['interactiveBody'] as string | undefined) ?? '',
+              session,
+              contact,
+            );
+            if (interactiveType === 'list') {
+              const sections =
+                (node.data['interactiveListSections'] as
+                  | Array<{
+                      title?: string;
+                      rows: Array<{ id: string; title: string }>;
+                    }>
+                  | undefined) ?? [];
+              await this.sendService.sendInteractive(
+                workspaceId,
+                conversation.id,
+                {
+                  interactiveType: 'list',
+                  body,
+                  buttonLabel:
+                    (node.data['buttonLabel'] as string | undefined) ??
+                    'Choose',
+                  sections,
+                },
+              );
+            } else {
+              const buttons =
+                (node.data['interactiveButtons'] as
+                  | Array<{ id: string; title: string }>
+                  | undefined) ?? [];
+              await this.sendService.sendInteractive(
+                workspaceId,
+                conversation.id,
+                { interactiveType: 'button', body, buttons },
+              );
+            }
+          } else {
+            const text = this.substituteVars(
+              (node.data['message'] as string | null | undefined) ??
+                (node.data['body'] as string | null | undefined) ??
+                '',
+              session,
+              contact,
+            );
+            await this.sendService.send(workspaceId, conversation.id, {
+              type: 'text',
+              text,
+            });
+          }
         } catch (err) {
           this.logger.warn(
             `flow send_message failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        const next = this.followEdge(flow, node.id);
+        await this.advanceToNext(next, session, flow, conversation, contact);
+        break;
+      }
+
+      case 'send_template': {
+        const templateName = (node.data['templateName'] as string) ?? '';
+        const templateLanguage =
+          (node.data['templateLanguage'] as string) ?? '';
+        const rawVars =
+          (node.data['templateVariables'] as
+            | Record<string, string>
+            | undefined) ?? {};
+        const parameters = Object.entries(rawVars).map(([, v]) => ({
+          text: this.substituteVars(v, session, contact),
+        }));
+        try {
+          await this.sendService.send(workspaceId, conversation.id, {
+            type: 'template',
+            templateName,
+            templateLanguage,
+            parameters,
+            headerMediaUrl: node.data['headerMediaUrl'] as string | undefined,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `flow send_template failed conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
         const next = this.followEdge(flow, node.id);

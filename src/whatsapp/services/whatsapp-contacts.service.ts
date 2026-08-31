@@ -240,14 +240,18 @@ export class WhatsappContactsService {
       (h) => mapping[h] === 'email',
     );
     const tagHeaders = Object.keys(mapping).filter((h) => mapping[h] === 'tag');
-    const attrHeaders = Object.entries(mapping).filter(([, target]) =>
-      target.startsWith('attr:'),
+    const standardTargets = new Set(['phone', 'name', 'email', 'tag']);
+    const attrHeaders = Object.entries(mapping).filter(
+      ([, target]) =>
+        target.startsWith('attr:') || !standardTargets.has(target),
     );
 
     const normalized: NormalizedImportRow[] = rows.map((row) => {
       const attributes: Record<string, string> = {};
       for (const [header, target] of attrHeaders) {
-        const key = target.slice('attr:'.length).trim();
+        const key = target.startsWith('attr:')
+          ? target.slice('attr:'.length).trim()
+          : target.trim();
         const value = row[header]?.trim();
         if (key && value) attributes[key] = value;
       }

@@ -13,13 +13,9 @@ import { PlatformRole } from '../admin/enums/platform-role.enum';
 import { ApiErrorResponse } from '../common/swagger/api-error-response.decorator';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { ENTITLEMENT_CATALOG } from './plan-keys';
 import { PlansService } from './plans.service';
 
-/**
- * Staff CRUD for plans. There is deliberately NO delete — workspaces reference
- * plans (FK RESTRICT), so a plan that ever had a customer is retired by status
- * (deprecated/hidden), never removed.
- */
 @ApiTags('admin-plans')
 @Controller({ path: 'admin/plans', version: '1' })
 export class PlansController {
@@ -29,6 +25,12 @@ export class PlansController {
   @StaffAuth()
   list() {
     return this.plans.listAll();
+  }
+
+  @Get('entitlement-catalog')
+  @StaffAuth()
+  entitlementCatalog() {
+    return ENTITLEMENT_CATALOG;
   }
 
   @Post()

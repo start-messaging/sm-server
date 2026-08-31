@@ -57,6 +57,10 @@ export class Plan extends BaseEntity {
   @Column({ name: 'trial_days', type: 'int', default: 0 })
   trialDays!: number;
 
+  /** Per-feature minimum role gates. featureKey → WorkspaceRole string. `{}` = no gates. */
+  @Column({ name: 'role_gates', type: 'jsonb', default: '{}' })
+  roleGates!: Record<string, string>;
+
   @Column({
     type: 'enum',
     enum: PlanStatus,

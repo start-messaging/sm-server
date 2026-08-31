@@ -32,7 +32,7 @@ export class CreateFlowDto {
   @MaxLength(500)
   description?: string;
 
-  @IsIn(['first_message', 'any_inbound', 'keyword'])
+  @IsIn(['first_message', 'any_inbound', 'keyword', 'manual'])
   triggerType!: FlowTriggerType;
 
   @IsOptional()

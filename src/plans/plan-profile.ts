@@ -12,6 +12,7 @@ export interface PlanProfile {
   status: string;
   features: PlanFeatures;
   limits: PlanLimits;
+  roleGates: Record<string, string>;
 }
 
 export function presentPlan(plan: Plan): PlanProfile {
@@ -25,5 +26,6 @@ export function presentPlan(plan: Plan): PlanProfile {
     status: plan.status,
     features: plan.features,
     limits: plan.limits,
+    roleGates: plan.roleGates ?? {},
   };
 }

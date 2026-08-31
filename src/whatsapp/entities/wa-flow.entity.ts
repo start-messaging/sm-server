@@ -3,11 +3,16 @@ import { BaseEntity } from '../../common/entities/base.entity';
 
 export type FlowStatus = 'draft' | 'active' | 'inactive';
 
-export type FlowTriggerType = 'first_message' | 'any_inbound' | 'keyword';
+export type FlowTriggerType =
+  | 'first_message'
+  | 'any_inbound'
+  | 'keyword'
+  | 'manual';
 
 export type FlowNodeType =
   | 'trigger'
   | 'send_message'
+  | 'send_template'
   | 'wait_for_reply'
   | 'wait_delay'
   | 'button_branch'

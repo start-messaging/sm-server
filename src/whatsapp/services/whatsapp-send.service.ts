@@ -20,6 +20,7 @@ import { InboxRealtimeService } from '../realtime/inbox-realtime.service';
 import {
   MetaGraphClient,
   MetaInteractivePayload,
+  MetaMediaObject,
   MetaSendMessageInput,
 } from './meta-graph.client';
 import { WhatsappMediaService } from './whatsapp-media.service';
@@ -41,10 +42,12 @@ export interface SendTemplateInput {
 
 export interface SendMediaInput {
   type: 'image' | 'audio' | 'video' | 'document';
-  /** Raw file buffer from the multipart upload. */
-  buffer: Buffer;
-  mimeType: string;
-  filename: string;
+  /** Raw file buffer from the multipart upload (inbox composer). */
+  buffer?: Buffer;
+  mimeType?: string;
+  filename?: string;
+  /** Publicly hosted media URL, sent to Meta by link (flow builder media node). */
+  url?: string;
   /** Optional caption (image, video, document only — Meta ignores for audio). */
   caption?: string;
 }
@@ -152,10 +155,11 @@ export class WhatsappSendService {
     } | null = null;
 
     if (
-      input.type === 'image' ||
-      input.type === 'audio' ||
-      input.type === 'video' ||
-      input.type === 'document'
+      (input.type === 'image' ||
+        input.type === 'audio' ||
+        input.type === 'video' ||
+        input.type === 'document') &&
+      input.buffer
     ) {
       mediaUploadMeta = await this.mediaService.uploadForSend({
         workspaceId,
@@ -163,8 +167,8 @@ export class WhatsappSendService {
         phoneNumberId: phone.metaPhoneNumberId,
         accessToken: token,
         buffer: input.buffer,
-        mimeType: input.mimeType,
-        filename: input.filename,
+        mimeType: input.mimeType ?? 'application/octet-stream',
+        filename: input.filename ?? 'file',
       });
     }
 
@@ -210,13 +214,21 @@ export class WhatsappSendService {
             mediaMime: mediaUploadMeta.mediaMime,
             mediaFilename: mediaUploadMeta.mediaFilename,
           }
-        : {
-            mediaType: null,
-            mediaR2Key: null,
-            mediaUrl: null,
-            mediaMime: null,
-            mediaFilename: null,
-          }),
+        : input.type !== 'text' && input.type !== 'template' && input.url
+          ? {
+              mediaType: input.type as MessageMediaType,
+              mediaR2Key: null,
+              mediaUrl: input.url,
+              mediaMime: null,
+              mediaFilename: input.filename ?? null,
+            }
+          : {
+              mediaType: null,
+              mediaR2Key: null,
+              mediaUrl: null,
+              mediaMime: null,
+              mediaFilename: null,
+            }),
     });
     await this.messages.save(message);
 
@@ -416,8 +428,11 @@ export class WhatsappSendService {
       };
     }
 
-    // Media types: image | audio | video | document
-    const id = metaMediaId ?? '';
+    // Media types: image | audio | video | document. Uploaded buffers carry a
+    // Meta media id; flow-builder sends reference a public URL by `link`.
+    const ref: MetaMediaObject = metaMediaId
+      ? { id: metaMediaId }
+      : { link: input.url ?? '' };
     const caption = input.caption;
     const filename = input.filename;
 
@@ -426,22 +441,22 @@ export class WhatsappSendService {
         return {
           to: phone,
           type: 'image',
-          image: { id, ...(caption ? { caption } : {}) },
+          image: { ...ref, ...(caption ? { caption } : {}) },
         };
       case 'audio':
-        return { to: phone, type: 'audio', audio: { id } };
+        return { to: phone, type: 'audio', audio: ref };
       case 'video':
         return {
           to: phone,
           type: 'video',
-          video: { id, ...(caption ? { caption } : {}) },
+          video: { ...ref, ...(caption ? { caption } : {}) },
         };
       case 'document':
         return {
           to: phone,
           type: 'document',
           document: {
-            id,
+            ...ref,
             ...(caption ? { caption } : {}),
             ...(filename ? { filename } : {}),
           },

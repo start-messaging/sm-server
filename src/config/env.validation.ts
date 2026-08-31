@@ -87,8 +87,11 @@ export const envValidationSchema = Joi.object({
   R2_ACCOUNT_ID: Joi.string().optional(),
   R2_ACCESS_KEY_ID: Joi.string().optional(),
   R2_SECRET_ACCESS_KEY: Joi.string().optional(),
+  // Public bucket — objects served at R2_PUBLIC_URL (Meta, campaigns, template media).
   R2_BUCKET_NAME: Joi.string().optional(),
   R2_PUBLIC_URL: Joi.string().uri().optional(),
+  // Private bucket — no public URL; served through signed/proxy endpoints (inbound media).
+  R2_PRIVATE_BUCKET_NAME: Joi.string().optional(),
 
   // Meta WhatsApp Cloud API.
   META_APP_ID: Joi.string().optional(),
@@ -179,6 +182,7 @@ export interface EnvVars {
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET_NAME?: string;
   R2_PUBLIC_URL?: string;
+  R2_PRIVATE_BUCKET_NAME?: string;
 
   META_APP_ID?: string;
   META_APP_SECRET?: string;

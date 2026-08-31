@@ -75,4 +75,7 @@ export class CreatePlanDto {
   @IsOptional()
   @IsPlanLimits()
   limits?: PlanLimits;
+
+  @IsOptional()
+  roleGates?: Record<string, string>;
 }

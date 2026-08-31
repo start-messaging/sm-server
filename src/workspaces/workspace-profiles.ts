@@ -29,6 +29,7 @@ export interface CurrentWorkspaceProfile extends WorkspaceSummary {
   timezone: string | null;
   planFeatures: PlanFeatures;
   planLimits: PlanLimits;
+  planRoleGates: Record<string, string>;
 }
 
 export function presentWorkspaceSummary(
@@ -59,5 +60,6 @@ export function presentCurrentWorkspace(
     timezone: workspace.timezone,
     planFeatures: workspace.plan?.features ?? {},
     planLimits: workspace.plan?.limits ?? {},
+    planRoleGates: workspace.plan?.roleGates ?? {},
   };
 }

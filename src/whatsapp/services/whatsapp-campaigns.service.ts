@@ -30,6 +30,7 @@ export interface CreateCampaignInput {
   scheduledAt?: string;
   variableMapping?: Record<string, string>;
   flowId?: string;
+  headerMediaUrl?: string;
 }
 
 export interface UpdateCampaignInput {
@@ -40,6 +41,7 @@ export interface UpdateCampaignInput {
   scheduledAt?: string | null;
   variableMapping?: Record<string, string>;
   flowId?: string | null;
+  headerMediaUrl?: string | null;
 }
 
 @Injectable()
@@ -86,6 +88,7 @@ export class WhatsappCampaignsService {
       status: 'DRAFT' as CampaignStatus,
       stats: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 },
       flowId: input.flowId ?? null,
+      headerMediaUrl: input.headerMediaUrl ?? null,
     });
     await this.campaigns.save(campaign);
     return this.serialize(campaign);
@@ -140,6 +143,9 @@ export class WhatsappCampaignsService {
     }
     if (input.flowId !== undefined) {
       campaign.flowId = input.flowId ?? null;
+    }
+    if (input.headerMediaUrl !== undefined) {
+      campaign.headerMediaUrl = input.headerMediaUrl ?? null;
     }
 
     await this.campaigns.save(campaign);
@@ -309,9 +315,10 @@ export class WhatsappCampaignsService {
 
       const attrs: Record<string, string> = {};
       for (const [key, value] of Object.entries(row)) {
-        if (key.startsWith('attr:') && value?.trim()) {
-          attrs[key.slice('attr:'.length)] = value.trim();
-        }
+        if (key === 'phone' || key === 'name') continue;
+        if (!value?.trim()) continue;
+        const attrKey = key.startsWith('attr:') ? key.slice('attr:'.length) : key;
+        attrs[attrKey] = value.trim();
       }
 
       const name = row.name?.trim();
@@ -459,6 +466,7 @@ export class WhatsappCampaignsService {
       stats: c.stats,
       skippedOptedOut: c.skippedOptedOut ?? 0,
       flowId: c.flowId ?? null,
+      headerMediaUrl: c.headerMediaUrl ?? null,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     };

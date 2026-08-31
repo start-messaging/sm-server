@@ -1999,6 +1999,9 @@ export class WaWebhookProcessor extends WorkerHost {
     });
     for (const flow of flows) {
       switch (flow.triggerType) {
+        case 'manual':
+          // Manual flows never auto-start from inbound messages.
+          break;
         case 'first_message':
           if (conversation.unreadCount === 1) return flow;
           break;

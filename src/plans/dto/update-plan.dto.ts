@@ -52,4 +52,7 @@ export class UpdatePlanDto {
   @IsOptional()
   @IsPlanLimits()
   limits?: PlanLimits;
+
+  @IsOptional()
+  roleGates?: Record<string, string>;
 }

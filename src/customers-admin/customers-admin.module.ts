@@ -23,6 +23,8 @@ import { AdminWorkspacesController } from './admin-workspaces.controller';
 import { AdminWorkspacesService } from './admin-workspaces.service';
 import { WorkspaceRatesController } from './workspace-rates.controller';
 import { WorkspaceRatesService } from './workspace-rates.service';
+import { AdminStatsController } from './admin-stats.controller';
+import { AdminStatsService } from './admin-stats.service';
 
 /**
  * Staff-facing surface over CUSTOMERS: read users + their workspaces, and
@@ -59,12 +61,14 @@ import { WorkspaceRatesService } from './workspace-rates.service';
     AdminWorkspacesController,
     WorkspaceRatesController,
     AdminWalletsController,
+    AdminStatsController,
   ],
   providers: [
     AdminUsersService,
     AdminWorkspacesService,
     WorkspaceRatesService,
     AdminWalletsService,
+    AdminStatsService,
   ],
 })
 export class CustomersAdminModule {}
