@@ -142,6 +142,19 @@ export class MetaGraphClient {
 
   // ── Flows ────────────────────────────────────────────────────────────────
 
+  /**
+   * Catalogs linked to this WABA.
+   * GET /{waba-id}/product_catalogs — empty when none is attached in Manager.
+   */
+  async listProductCatalogs(
+    wabaId: string,
+    accessToken: string,
+  ): Promise<MetaProductCatalog[]> {
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/product_catalogs?fields=id,name`;
+    const res = await this.get<{ data: MetaProductCatalog[] }>(url, accessToken);
+    return res.data ?? [];
+  }
+
   /** Fetch all WhatsApp Flows under a WABA. */
   async listMetaFlows(
     wabaId: string,
@@ -179,41 +192,57 @@ export class MetaGraphClient {
   }
 
   /**
-   * Aggregate delivery, read, and sent counts per template for the last 30 days.
-   * Returns one entry per template that received sends in the period.
-   * Uses granularity=DAILY so counts reflect the full rolling window.
+   * Aggregate delivery, read, and sent counts for a specific batch of templates.
+   * `template_ids` is required by Meta (max 10 per call). Lookback is last 30 days.
+   * Granularity is always DAILY (the only supported value).
    */
   async getTemplateAnalytics(
     wabaId: string,
     accessToken: string,
+    templateIds: string[],
   ): Promise<MetaTemplateAnalyticsResponse> {
     const now = new Date();
-    const start = Math.floor(
-      new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000,
+    // Align to midnight UTC to satisfy Meta's timestamp requirement
+    const endTs = Math.floor(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000,
     );
-    const end = Math.floor(now.getTime() / 1000);
-    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/template_analytics?start=${start}&end=${end}&granularity=DAILY&metric_types=["SENT","DELIVERED","READ"]`;
+    const startTs = endTs - 30 * 24 * 60 * 60;
+    const ids = encodeURIComponent(JSON.stringify(templateIds));
+    const url =
+      `${GRAPH_BASE}/${this.version}/${wabaId}/template_analytics` +
+      `?start=${startTs}&end=${endTs}&granularity=DAILY` +
+      `&metric_types=${encodeURIComponent('["SENT","DELIVERED","READ"]')}` +
+      `&template_ids=${ids}` +
+      `&product_type=CLOUD_API`;
     return this.get<MetaTemplateAnalyticsResponse>(url, accessToken);
   }
 
   /**
    * Conversation counts by category (MARKETING / UTILITY / AUTHENTICATION / SERVICE)
-   * for the current calendar month. Used for the billing breakdown panel.
+   * for the last 30 days.
+   *
+   * Uses the Graph API field notation: GET /{wabaId}?fields=conversation_analytics...
+   * DAILY granularity avoids the "too small time window" error that MONTHLY triggers
+   * when fewer than ~30 days have elapsed since the start of the month.
    */
   async getConversationAnalytics(
     wabaId: string,
     accessToken: string,
   ): Promise<MetaConversationAnalyticsResponse> {
     const now = new Date();
-    const start = Math.floor(
-      new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000,
+    const endTs = Math.floor(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000,
     );
-    const end = Math.floor(now.getTime() / 1000);
-    const url =
-      `${GRAPH_BASE}/${this.version}/${wabaId}/conversation_analytics` +
-      `?start=${start}&end=${end}&granularity=MONTHLY` +
-      `&conversation_types=["REGULAR"]` +
-      `&breakdown=["conversation_category"]`;
+    const startTs = endTs - 30 * 24 * 60 * 60;
+    const fields =
+      `conversation_analytics` +
+      `.start(${startTs})` +
+      `.end(${endTs})` +
+      `.granularity(DAILY)` +
+      `.metric_types([CONVERSATION])` +
+      `.conversation_types([REGULAR])` +
+      `.dimensions([conversation_category])`;
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}?fields=${encodeURIComponent(fields)}`;
     return this.get<MetaConversationAnalyticsResponse>(url, accessToken);
   }
 
@@ -540,6 +569,11 @@ export interface MetaSendMessageResult {
   messages: Array<{ id: string }>;
 }
 
+export interface MetaProductCatalog {
+  id: string;
+  name?: string;
+}
+
 export interface MetaFlowInfo {
   id: string;
   name: string;
@@ -569,6 +603,8 @@ export interface MetaConversationDataPoint {
   conversation_category?: string;
   conversation_type?: string;
   count?: number;
+  /** Present in field-based API when dimensions=[conversation_category]. */
+  conversation?: number;
   cost?: string;
 }
 

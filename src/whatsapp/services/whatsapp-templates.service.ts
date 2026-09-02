@@ -220,46 +220,71 @@ export class WhatsappTemplatesService {
    * and persist them on each template row. Silently skips workspaces with no WABA
    * or when the Graph call fails (e.g. first month with no sends yet).
    */
+  /**
+   * Pull per-template delivery/read analytics from Meta.
+   * Meta requires template_ids (max 10 per call), so we batch.
+   */
   async syncTemplateAnalytics(workspaceId: string): Promise<void> {
     const waba = await this.wabaAccounts.findOne({
       where: { workspaceId, serviceKey: 'whatsapp' },
     });
     if (!waba) return;
 
-    const token = decryptToken(waba.accessTokenEncrypted);
-    let response;
-    try {
-      response = await this.meta.getTemplateAnalytics(waba.metaWabaId, token);
-    } catch (err) {
-      this.logger.warn(
-        `[syncTemplateAnalytics] Meta API failed for ${workspaceId}: ${String(err)}`,
-      );
-      return;
-    }
+    const allTemplates = await this.templates.find({
+      where: { workspaceId },
+      select: ['id', 'metaTemplateId'],
+    });
 
-    for (const entry of response.data ?? []) {
-      if (!entry.template_id) continue;
-      let sent = 0;
-      let delivered = 0;
-      let read = 0;
-      for (const dp of entry.analytics?.data ?? []) {
-        sent += dp.sent ?? 0;
-        delivered += dp.delivered ?? 0;
-        read += dp.read ?? 0;
+    const withMetaId = allTemplates.filter((t) => !!t.metaTemplateId);
+    if (!withMetaId.length) return;
+
+    const token = decryptToken(waba.accessTokenEncrypted);
+    const BATCH = 10;
+    let updatedCount = 0;
+
+    for (let i = 0; i < withMetaId.length; i += BATCH) {
+      const batch = withMetaId.slice(i, i + BATCH);
+      const ids = batch.map((t) => t.metaTemplateId!);
+
+      let response: Awaited<ReturnType<typeof this.meta.getTemplateAnalytics>>;
+      try {
+        response = await this.meta.getTemplateAnalytics(
+          waba.metaWabaId,
+          token,
+          ids,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `[syncTemplateAnalytics] Meta API failed (batch ${i / BATCH + 1}) for ${workspaceId}: ${String(err)}`,
+        );
+        continue;
       }
-      await this.templates.update(
-        { workspaceId, metaTemplateId: entry.template_id },
-        {
-          metaSentCount: sent,
-          metaDeliveredCount: delivered,
-          metaReadCount: read,
-          analyticsUpdatedAt: new Date(),
-        },
-      );
+
+      for (const entry of response.data ?? []) {
+        if (!entry.template_id) continue;
+        let sent = 0;
+        let delivered = 0;
+        let read = 0;
+        for (const dp of entry.analytics?.data ?? []) {
+          sent += dp.sent ?? 0;
+          delivered += dp.delivered ?? 0;
+          read += dp.read ?? 0;
+        }
+        await this.templates.update(
+          { workspaceId, metaTemplateId: entry.template_id },
+          {
+            metaSentCount: sent,
+            metaDeliveredCount: delivered,
+            metaReadCount: read,
+            analyticsUpdatedAt: new Date(),
+          },
+        );
+        updatedCount++;
+      }
     }
 
     this.logger.log(
-      `[syncTemplateAnalytics] ${workspaceId}: updated ${(response.data ?? []).length} templates`,
+      `[syncTemplateAnalytics] ${workspaceId}: updated ${updatedCount} templates in ${Math.ceil(withMetaId.length / BATCH)} batch(es)`,
     );
   }
 

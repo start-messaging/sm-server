@@ -377,6 +377,32 @@ export class WhatsappConnectService {
   }
 
   /**
+   * Catalogs linked to this WABA in WhatsApp Manager.
+   * Empty when none is attached — CATALOG / MPM template buttons will fail review.
+   */
+  async listProductCatalogs(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const waba = await this.wabaAccounts.findOne({
+      where: { workspaceId, serviceKey: SERVICE_KEY },
+    });
+    if (!waba) return [];
+    try {
+      const token = decryptToken(waba.accessTokenEncrypted);
+      const catalogs = await this.meta.listProductCatalogs(
+        waba.metaWabaId,
+        token,
+      );
+      return catalogs.map((c) => ({ id: c.id, name: c.name ?? c.id }));
+    } catch (err) {
+      this.logger.warn(
+        `[catalogs] list failed for ${waba.metaWabaId}: ${String(err)}`,
+      );
+      return [];
+    }
+  }
+
+  /**
    * Manual pull-sync from Meta Graph (missed-webhook escape hatch).
    * If the WABA/phone is gone on Meta, retires local rows so Connect UI updates.
    */
@@ -460,7 +486,7 @@ export class WhatsappConnectService {
       );
 
       const now = new Date();
-      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 
       const snapshot: ConversationAnalyticsSnapshot = {
         month,
@@ -471,28 +497,21 @@ export class WhatsappConnectService {
         total: 0,
       };
 
-      // Meta returns either conversation_analytics.data or data depending on breakdown
-      const periods =
-        (res.conversation_analytics?.data ?? res.data) as Array<{
-          breakdown?: Array<{ conversation_category?: string; count?: number }>;
-          data_points?: Array<{ conversation_category?: string; count?: number }>;
-          conversation?: number;
-        }> | undefined;
-
-      for (const period of periods ?? []) {
-        const rows = period.breakdown ?? period.data_points ?? [];
-        for (const row of rows) {
-          const cat = row.conversation_category?.toUpperCase();
-          const count = row.count ?? 0;
+      // Field-based API: { conversation_analytics: { data: [ { data_points: [...] } ] } }
+      // Each data_point when using dimensions=[conversation_category] has:
+      // { conversation_category: "MARKETING", conversation: 50, start: ..., end: ... }
+      const dataBlocks = res.conversation_analytics?.data ?? res.data ?? [];
+      for (const block of dataBlocks) {
+        const points = block.data_points ?? block.breakdown ?? [];
+        for (const pt of points) {
+          const cat = pt.conversation_category?.toUpperCase();
+          // With DAILY granularity + conversation_category dimension, count is in `conversation`
+          const count = (pt.count ?? (pt as Record<string, unknown>).conversation ?? 0) as number;
           if (cat === 'MARKETING') snapshot.marketing += count;
           else if (cat === 'UTILITY') snapshot.utility += count;
           else if (cat === 'AUTHENTICATION') snapshot.authentication += count;
           else if (cat === 'SERVICE') snapshot.service += count;
           snapshot.total += count;
-        }
-        // Fallback when no breakdown dimension — aggregate total only
-        if (!rows.length && period.conversation) {
-          snapshot.total += period.conversation;
         }
       }
 
