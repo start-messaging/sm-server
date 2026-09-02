@@ -28,7 +28,17 @@ export type TemplateButtonType =
   | 'PHONE_NUMBER'
   | 'COPY_CODE'
   | 'REQUEST_CONTACT_INFO'
-  | 'OTP';
+  | 'OTP'
+  | 'FLOW'
+  | 'VOICE_CALL'
+  | 'VIDEO_CALL'
+  | 'CATALOG'
+  | 'MPM'
+  | 'POSTBACK'
+  | 'BOOKING_STATUS'
+  | 'PAYMENT_REQUEST';
+
+export type TemplateFlowIcon = 'DOCUMENT' | 'PROMOTION' | 'REVIEW';
 
 /** One button inside a BUTTONS component (Graph create payload). */
 export interface TemplateButton {
@@ -47,6 +57,13 @@ export interface TemplateButton {
   autofill_text?: string;
   /** ONE_TAP / ZERO_TAP: the Android app allowed to autofill the code. */
   supported_apps?: Array<{ package_name: string; signature_hash: string }>;
+  /** FLOW — WhatsApp Flow id from Manager / our meta-flows sync. */
+  flow_id?: string;
+  flow_action?: 'NAVIGATE' | 'DATA_EXCHANGE';
+  navigate_screen?: string;
+  icon?: TemplateFlowIcon;
+  /** VOICE_CALL / VIDEO_CALL — how long the button stays tappable, max 43200 (30 days). */
+  ttl_minutes?: number;
 }
 
 export type TemplateComponentType =
@@ -65,7 +82,7 @@ export interface TemplateCarouselCard {
 export interface TemplateComponent {
   type: TemplateComponentType;
   text?: string;
-  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION';
   /**
    * HEADER format IMAGE/VIDEO/DOCUMENT only: publicly-accessible media URL,
    * passed through to Meta unchanged. See open issue in create-template.dto.ts
@@ -76,6 +93,8 @@ export interface TemplateComponent {
   example?: {
     body_text?: string[][];
     header_text?: string[];
+    header_text_named_params?: Array<{ param_name: string; example: string }>;
+    body_text_named_params?: Array<{ param_name: string; example: string }>;
     /** Media header / carousel card header: uploaded asset handle. */
     header_handle?: string[];
   };

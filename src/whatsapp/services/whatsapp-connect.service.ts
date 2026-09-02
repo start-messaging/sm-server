@@ -33,10 +33,7 @@ import {
   WabaVerificationStatus,
 } from '../entities/waba-account.entity';
 import { WA_ERR } from '../whatsapp-error-codes';
-import {
-  MetaGraphClient,
-  wabaHasPaymentMethod,
-} from './meta-graph.client';
+import { MetaGraphClient } from './meta-graph.client';
 
 export interface ConnectWhatsappInput {
   /** Short-lived code from Embedded Signup v4 callback. */
@@ -63,7 +60,7 @@ export interface WabaConnectionStatusResponse {
   status: 'connected' | 'disconnected' | 'not_connected';
   displayName: string | null;
   phoneNumber: string | null;
-  /** null = Graph has never answered (or last refresh failed). */
+  /** Observed from send/webhook errors only — Tech Providers cannot poll this. */
   metaPaymentReady: boolean | null;
   wabaId: string | null;
   /** True when WABA is linked but phone is not yet Cloud API registered. */
@@ -188,7 +185,7 @@ export class WhatsappConnectService {
           wabaInfo.account_review_status?.toUpperCase() ?? null,
         businessVerificationStatus:
           wabaInfo.business_verification_status ?? null,
-        metaPaymentReady: wabaHasPaymentMethod(wabaInfo),
+        metaPaymentReady: null,
         rawMetadata: wabaInfo as unknown as Record<string, unknown>,
       });
       await em.save(waba);
@@ -323,9 +320,8 @@ export class WhatsappConnectService {
   }
 
   /**
-   * Local CRM status. Payment is mirrored from Graph (`primary_funding_id`).
-   * A stale `null` is backfilled once so existing rows leave "unknown".
-   * Use `syncFromMeta` for a full pull-refresh.
+   * Local CRM status. Payment readiness is not polled from Graph (Tech
+   * Provider — no permission). Use `syncFromMeta` to refresh connection.
    */
   async getStatus(workspaceId: string): Promise<WabaConnectionStatusResponse> {
     const waba = await this.wabaAccounts.findOne({
@@ -355,9 +351,6 @@ export class WhatsappConnectService {
     });
 
     const status = this.deriveLocalStatus(waba, phone);
-    if (status === 'connected' && waba.metaPaymentReady === null) {
-      await this.refreshPaymentReady(waba);
-    }
 
     return {
       status,
@@ -401,8 +394,6 @@ export class WhatsappConnectService {
       return this.getStatus(workspaceId);
     }
 
-    await this.refreshPaymentReady(waba);
-
     const stillLive = await this.checkMetaConnectionAlive(waba, phone);
     if (!stillLive) {
       await this.ds.transaction(async (em) => {
@@ -441,24 +432,6 @@ export class WhatsappConnectService {
 
     this.logger.log(`[disconnect] workspace ${workspaceId} WABA soft-deleted`);
     return { disconnected: true };
-  }
-
-  /**
-   * Pull `primary_funding_id` and persist true/false. Leaves the stored
-   * value unchanged if Graph fails.
-   */
-  private async refreshPaymentReady(waba: WabaAccount): Promise<void> {
-    try {
-      const accessToken = decryptToken(waba.accessTokenEncrypted);
-      const fresh = await this.meta.getWaba(waba.metaWabaId, accessToken);
-      const ready = wabaHasPaymentMethod(fresh);
-      await this.wabaAccounts.update(waba.id, { metaPaymentReady: ready });
-      waba.metaPaymentReady = ready;
-    } catch (e) {
-      this.logger.warn(
-        `[sync] primary_funding_id fetch failed: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
   }
 
   private deriveLocalStatus(

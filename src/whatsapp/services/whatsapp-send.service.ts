@@ -25,6 +25,11 @@ import {
 } from './meta-graph.client';
 import { WhatsappMediaService } from './whatsapp-media.service';
 import { SendInteractiveDto } from '../dto/send-interactive.dto';
+import {
+  buildTemplateSendComponents,
+  templateHasMediaHeader,
+  type TemplateSendButtonParam,
+} from '../utils/template-send-components';
 
 export interface SendTextInput {
   type: 'text';
@@ -38,6 +43,13 @@ export interface SendTemplateInput {
   parameters?: Record<string, string>[];
   /** Public URL for the template header media (IMAGE/VIDEO/DOCUMENT). */
   headerMediaUrl?: string;
+  /** Inbox upload — sent to Meta `/{phoneNumberId}/media` and referenced by id. */
+  headerFile?: {
+    buffer: Buffer;
+    mimeType: string;
+    filename: string;
+  };
+  buttonParameters?: TemplateSendButtonParam[];
 }
 
 export interface SendMediaInput {
@@ -133,13 +145,28 @@ export class WhatsappSendService {
     }
 
     let templateBody: string | null = null;
+    let approvedTemplate: WaTemplate | null = null;
     if (input.type === 'template') {
-      const template = await this.requireApprovedTemplate(
+      approvedTemplate = await this.requireApprovedTemplate(
         workspaceId,
         input.templateName,
         input.templateLanguage,
       );
-      templateBody = fillTemplateBody(template, input.parameters);
+      templateBody = fillTemplateBody(approvedTemplate, input.parameters);
+      if (
+        templateHasMediaHeader(approvedTemplate.components) &&
+        !input.headerMediaUrl &&
+        !input.headerFile
+      ) {
+        throw new AppException(
+          {
+            code: WA_ERR.TEMPLATE_HEADER_MEDIA_REQUIRED,
+            message:
+              'This template needs a header image, video, or document before it can be sent.',
+          },
+          422,
+        );
+      }
     }
 
     const token = decryptToken(waba.accessTokenEncrypted);
@@ -172,10 +199,26 @@ export class WhatsappSendService {
       });
     }
 
+    let templateHeaderMediaId: string | undefined;
+    if (input.type === 'template' && input.headerFile?.buffer.length) {
+      const uploaded = await this.mediaService.uploadForSend({
+        workspaceId,
+        conversationId,
+        phoneNumberId: phone.metaPhoneNumberId,
+        accessToken: token,
+        buffer: input.headerFile.buffer,
+        mimeType: input.headerFile.mimeType,
+        filename: input.headerFile.filename,
+      });
+      templateHeaderMediaId = uploaded.metaMediaId;
+    }
+
     const metaBody = this.buildMetaPayload(
       conversation.contactPhone,
       input,
       mediaUploadMeta?.metaMediaId,
+      approvedTemplate,
+      templateHeaderMediaId,
     );
 
     let metaMessageId: string;
@@ -387,6 +430,8 @@ export class WhatsappSendService {
     to: string,
     input: SendMessageInput,
     metaMediaId?: string,
+    template?: WaTemplate | null,
+    templateHeaderMediaId?: string,
   ): MetaSendMessageInput {
     const phone = to.replace(/^\+/, '');
 
@@ -395,28 +440,16 @@ export class WhatsappSendService {
     }
 
     if (input.type === 'template') {
-      const components: object[] = [];
-      if (input.headerMediaUrl) {
-        const url = input.headerMediaUrl.toLowerCase();
-        const mediaType = url.match(/\.(mp4|3gpp?)$/i)
-          ? 'video'
-          : url.match(/\.(pdf|docx?|xlsx?|txt)$/i)
-            ? 'document'
-            : 'image';
-        components.push({
-          type: 'header',
-          parameters: [{ type: mediaType, [mediaType]: { link: input.headerMediaUrl } }],
-        });
-      }
-      if (input.parameters?.length) {
-        components.push({
-          type: 'body',
-          parameters: input.parameters.map((p) => ({
-            type: 'text' as const,
-            text: p['text'] ?? Object.values(p)[0] ?? '',
-          })),
-        });
-      }
+      const components = template
+        ? buildTemplateSendComponents({
+            template,
+            parameters: input.parameters,
+            headerMediaUrl: input.headerMediaUrl,
+            headerMediaId: templateHeaderMediaId,
+            headerFilename: input.headerFile?.filename,
+            buttonParameters: input.buttonParameters,
+          })
+        : [];
       return {
         to: phone,
         type: 'template',
@@ -710,7 +743,7 @@ function fillTemplateBody(
   if (!body) return null;
   if (!parameters?.length) return body;
 
-  return body.replace(/\{\{(\d+)\}\}/g, (match, n: string) => {
+  const positional = body.replace(/\{\{(\d+)\}\}/g, (match, n: string) => {
     const idx = Number(n) - 1;
     if (!Number.isFinite(idx) || idx < 0 || idx >= parameters.length) {
       return match;
@@ -718,5 +751,17 @@ function fillTemplateBody(
     const param = parameters[idx]!;
     const text = param['text'] ?? Object.values(param)[0];
     return text != null && String(text).length > 0 ? String(text) : match;
+  });
+  if (positional !== body) return positional;
+
+  const named = new Map(
+    parameters.map((p) => [
+      (p['parameter_name'] ?? p['name'] ?? '').toLowerCase(),
+      p['text'] ?? Object.values(p)[0] ?? '',
+    ]),
+  );
+  return body.replace(/\{\{([a-z][a-z0-9_]*)\}\}/gi, (match, name: string) => {
+    const text = named.get(name.toLowerCase());
+    return text ? String(text) : match;
   });
 }

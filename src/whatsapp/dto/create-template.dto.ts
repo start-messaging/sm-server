@@ -31,7 +31,7 @@ export type CarouselButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
 
 export const BUTTON_LABEL_MAX = 25;
 export const BUTTON_URL_MAX = 2000;
-export const COPY_CODE_MAX = 15;
+export const COPY_CODE_MAX = 20;
 export const CAROUSEL_MIN_CARDS = 2;
 export const CAROUSEL_MAX_CARDS = 10;
 
@@ -48,13 +48,41 @@ const BUTTON_MAX_PER_TYPE: Record<TemplateButtonType, number> = {
   COPY_CODE: 1,
   REQUEST_CONTACT_INFO: 1,
   OTP: 1,
+  FLOW: 1,
+  VOICE_CALL: 1,
+  VIDEO_CALL: 1,
+  CATALOG: 1,
+  MPM: 1,
+  POSTBACK: 2,
+  BOOKING_STATUS: 1,
+  PAYMENT_REQUEST: 1,
 };
+
+const ALL_BUTTON_TYPES: TemplateButtonType[] = [
+  'QUICK_REPLY',
+  'URL',
+  'PHONE_NUMBER',
+  'COPY_CODE',
+  'REQUEST_CONTACT_INFO',
+  'OTP',
+  'FLOW',
+  'VOICE_CALL',
+  'VIDEO_CALL',
+  'CATALOG',
+  'MPM',
+  'POSTBACK',
+  'BOOKING_STATUS',
+  'PAYMENT_REQUEST',
+];
 
 /** Types whose label Meta controls — a client-supplied `text` is ignored. */
 const FIXED_LABEL_BUTTON_TYPES: TemplateButtonType[] = [
   'COPY_CODE',
   'REQUEST_CONTACT_INFO',
   'OTP',
+  'CATALOG',
+  'MPM',
+  'PAYMENT_REQUEST',
 ];
 
 function hasFixedLabel(type: TemplateButtonType): boolean {
@@ -121,6 +149,20 @@ export function findTemplateShapeViolation(
     const violation = findButtonGroupViolation(group, input.category);
     if (violation) return violation;
   }
+
+  if (subtype !== 'carousel') {
+    const mediaHeader = (input.components ?? []).find(
+      (c) =>
+        c.type === 'HEADER' &&
+        (c.format === 'IMAGE' ||
+          c.format === 'VIDEO' ||
+          c.format === 'DOCUMENT'),
+    );
+    if (mediaHeader && !mediaHeader.example?.header_handle?.[0]?.trim()) {
+      return 'Media headers require a sample file uploaded to Meta before review.';
+    }
+  }
+
   return findSubtypeViolation(input, subtype);
 }
 
@@ -177,6 +219,16 @@ function findButtonGroupViolation(
     }
     if (b.type === 'OTP' && category !== 'AUTHENTICATION') {
       return 'OTP buttons are only allowed on AUTHENTICATION templates.';
+    }
+    if (b.type === 'FLOW' && !b.flow_id?.trim()) {
+      return 'FLOW buttons require a WhatsApp Flow (flow_id).';
+    }
+    if (
+      (b.type === 'VOICE_CALL' || b.type === 'VIDEO_CALL') &&
+      b.ttl_minutes != null &&
+      (b.ttl_minutes < 1 || b.ttl_minutes > 43200)
+    ) {
+      return 'Call buttons stay active for at most 30 days (43200 minutes).';
     }
   }
 
@@ -336,6 +388,14 @@ export class TemplateComponentExampleDto {
   @IsString({ each: true })
   header_text?: string[];
 
+  @IsOptional()
+  @IsArray()
+  header_text_named_params?: Array<{ param_name: string; example: string }>;
+
+  @IsOptional()
+  @IsArray()
+  body_text_named_params?: Array<{ param_name: string; example: string }>;
+
   /** Media header: the asset handle returned by Meta's upload endpoint. */
   @IsOptional()
   @IsArray()
@@ -360,14 +420,7 @@ export class TemplateComponentExampleDto {
  */
 export class TemplateButtonDto {
   @IsString()
-  @IsIn([
-    'QUICK_REPLY',
-    'URL',
-    'PHONE_NUMBER',
-    'COPY_CODE',
-    'REQUEST_CONTACT_INFO',
-    'OTP',
-  ])
+  @IsIn(ALL_BUTTON_TYPES)
   type!: TemplateButtonType;
 
   /**
@@ -429,6 +482,32 @@ export class TemplateButtonDto {
   @IsOptional()
   @IsString()
   signature_hash?: string;
+
+  /** FLOW — Meta Flow id (from WhatsApp Manager / our meta-flows sync). */
+  @IsOptional()
+  @IsString()
+  flow_id?: string;
+
+  @IsOptional()
+  @IsIn(['NAVIGATE', 'DATA_EXCHANGE'])
+  flow_action?: 'NAVIGATE' | 'DATA_EXCHANGE';
+
+  @IsOptional()
+  @IsString()
+  navigate_screen?: string;
+
+  @IsOptional()
+  @IsIn(['DOCUMENT', 'PROMOTION', 'REVIEW'])
+  icon?: 'DOCUMENT' | 'PROMOTION' | 'REVIEW';
+
+  /**
+   * VOICE_CALL / VIDEO_CALL — minutes the button stays tappable (max 43200 = 30 days).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(43200)
+  ttl_minutes?: number;
 }
 
 /** LIMITED_TIME_OFFER component payload — Meta caps the text at 16 chars. */
@@ -454,8 +533,8 @@ export class TemplateComponentDto {
   text?: string;
 
   @IsOptional()
-  @IsIn(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'])
-  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  @IsIn(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'])
+  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION';
 
   /**
    * HEADER format IMAGE/VIDEO/DOCUMENT only: publicly-accessible media URL,

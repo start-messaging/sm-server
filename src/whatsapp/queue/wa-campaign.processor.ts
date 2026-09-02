@@ -18,6 +18,7 @@ import { MetaGraphClient } from '../services/meta-graph.client';
 import { WhatsappFlowsService } from '../services/whatsapp-flows.service';
 import { AppException } from '../../common/exceptions/app.exception';
 import { WA_CAMPAIGN_QUEUE } from './wa-campaign.constants';
+import { buildTemplateSendComponents } from '../utils/template-send-components';
 
 export interface CampaignJobData {
   campaignId: string;
@@ -107,11 +108,13 @@ export class WaCampaignProcessor extends WorkerHost {
     const recipients = await this.buildRecipients(campaign, workspaceId);
 
     // Fetch template body once for hydration — avoids N DB lookups in the loop.
-    const templateBodyText = await this.fetchTemplateBody(
+    const sendTemplate = await this.fetchSendTemplate(
       workspaceId,
       campaign.templateName,
       campaign.templateLanguage,
     );
+    const templateBodyText =
+      sendTemplate?.components.find((c) => c.type === 'BODY')?.text ?? null;
 
     // `total` counts addressable recipients only; opted-out ones are reported
     // through `skippedOptedOut`. Recounted from zero on every run (including a
@@ -170,6 +173,7 @@ export class WaCampaignProcessor extends WorkerHost {
         const allComponents = this.buildAllComponents(
           built.components,
           campaign,
+          sendTemplate,
         );
 
         try {
@@ -290,27 +294,30 @@ export class WaCampaignProcessor extends WorkerHost {
       parameters: Array<{ type: 'text'; text: string }>;
     }>,
     campaign: WaCampaign,
+    template: Pick<WaTemplate, 'components' | 'buttons'> | null,
   ): unknown[] {
-    const components: unknown[] = [];
-
-    if (campaign.headerMediaUrl) {
-      // Derive media type from template body lookup is unreliable — use a
-      // heuristic based on the URL extension or fall back to 'image'.
-      const url = campaign.headerMediaUrl.toLowerCase();
-      const mediaType = url.match(/\.(mp4|mov|avi|webm)(\?|$)/)
-        ? 'video'
-        : url.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx)(\?|$)/)
-          ? 'document'
-          : 'image';
-
-      components.push({
-        type: 'header',
-        parameters: [
-          { type: mediaType, [mediaType]: { link: campaign.headerMediaUrl } },
-        ],
+    if (template) {
+      return buildTemplateSendComponents({
+        template,
+        parameters: bodyComponents[0]?.parameters.map((p) => ({
+          text: p.text,
+        })),
+        headerMediaUrl: campaign.headerMediaUrl ?? undefined,
       });
     }
 
+    const components: unknown[] = [];
+    if (campaign.headerMediaUrl) {
+      components.push({
+        type: 'header',
+        parameters: [
+          {
+            type: 'image',
+            image: { link: campaign.headerMediaUrl },
+          },
+        ],
+      });
+    }
     components.push(...bodyComponents);
     return components;
   }
@@ -638,18 +645,15 @@ export class WaCampaignProcessor extends WorkerHost {
    * Look up the BODY component text from our local WaTemplate row.
    * Returns null if the template isn't in DB yet (e.g. just submitted to Meta).
    */
-  private async fetchTemplateBody(
+  private async fetchSendTemplate(
     workspaceId: string,
     name: string,
     language: string,
-  ): Promise<string | null> {
-    const tpl = await this.waTemplates.findOne({
+  ): Promise<Pick<WaTemplate, 'components' | 'buttons'> | null> {
+    return this.waTemplates.findOne({
       where: { workspaceId, name, language },
-      select: { components: true },
+      select: { components: true, buttons: true },
     });
-    if (!tpl) return null;
-    const body = tpl.components.find((c) => c.type === 'BODY');
-    return body?.text ?? null;
   }
 
   /**

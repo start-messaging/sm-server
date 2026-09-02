@@ -48,6 +48,9 @@ export const WA_ERR = {
   /** Template not found in this WABA. */
   TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
 
+  /** IMAGE/VIDEO/DOCUMENT header was sent without media. */
+  TEMPLATE_HEADER_MEDIA_REQUIRED: 'TEMPLATE_HEADER_MEDIA_REQUIRED',
+
   // ── Phone quality / limits ────────────────────────────────────────────────
   /** Phone number quality rating is red; sends are blocked or severely limited. */
   PHONE_QUALITY_RED: 'PHONE_QUALITY_RED',

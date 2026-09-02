@@ -248,6 +248,7 @@ export class WhatsappTemplatesService {
 }
 
 const POSITIONAL_VAR_RE = /\{\{(\d+)\}\}/g;
+const NAMED_VAR_RE = /\{\{([a-z][a-z0-9_]*)\}\}/gi;
 
 /** Not in WA_ERR yet — kept as a literal so the client catalog can adopt it. */
 const TEMPLATE_INVALID_BUTTONS = 'TEMPLATE_INVALID_BUTTONS';
@@ -426,6 +427,31 @@ function normalizeTemplateButton(b: TemplateButtonDto): TemplateButton {
       return { type: 'REQUEST_CONTACT_INFO' };
     case 'OTP':
       return normalizeOtpButton(b);
+    case 'FLOW': {
+      const button: TemplateButton = {
+        type: 'FLOW',
+        text: b.text,
+        flow_id: b.flow_id,
+      };
+      if (b.flow_action) button.flow_action = b.flow_action;
+      if (b.navigate_screen) button.navigate_screen = b.navigate_screen;
+      if (b.icon) button.icon = b.icon;
+      return button;
+    }
+    case 'VOICE_CALL':
+    case 'VIDEO_CALL':
+      return {
+        type: b.type,
+        text: b.text,
+        ...(b.ttl_minutes != null ? { ttl_minutes: b.ttl_minutes } : {}),
+      };
+    case 'CATALOG':
+    case 'MPM':
+    case 'PAYMENT_REQUEST':
+      return { type: b.type };
+    case 'POSTBACK':
+    case 'BOOKING_STATUS':
+      return { type: b.type, text: b.text };
     default: {
       const url = b.url ?? '';
       const example = normalizeUrlButtonExample(url, b.example);
@@ -535,6 +561,26 @@ export function attachVariableExamples(
   return components.map((c) => {
     if ((c.type !== 'BODY' && c.type !== 'HEADER') || !c.text) return c;
     if (c.example) return c;
+
+    const named = [
+      ...new Set(
+        [...c.text.matchAll(NAMED_VAR_RE)].map((m) => m[1]!.toLowerCase()),
+      ),
+    ];
+    if (named.length > 0) {
+      const params = named.map((param_name) => ({
+        param_name,
+        example: `example_${param_name}`,
+      }));
+      if (c.type === 'BODY') {
+        return { ...c, example: { body_text_named_params: params } };
+      }
+      return {
+        ...c,
+        format: c.format ?? 'TEXT',
+        example: { header_text_named_params: params },
+      };
+    }
 
     const indexes = [
       ...new Set(

@@ -32,6 +32,8 @@ export class WaTemplateDto {
   isCarousel!: boolean;
   /** Fixed at creation — an approved 3-card carousel only ever sends 3 cards. */
   carouselCardCount!: number | null;
+  /** Meta quality signal: HIGH | MEDIUM | LOW. Null until the first quality webhook. */
+  qualityScore!: string | null;
   createdAt!: string;
   updatedAt!: string;
 }
@@ -57,6 +59,7 @@ export function toWaTemplateDto(t: WaTemplate): WaTemplateDto {
     templateSubtype: t.templateSubtype,
     isCarousel: t.isCarousel,
     carouselCardCount: t.carouselCardCount,
+    qualityScore: t.qualityScore,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };

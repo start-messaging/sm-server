@@ -42,7 +42,7 @@ import { SendInteractiveDto } from '../dto/send-interactive.dto';
 import { CreateConversationDto } from '../dto/create-conversation.dto';
 import { PatchConversationDto } from '../dto/patch-conversation.dto';
 import { WA_ERR } from '../whatsapp-error-codes';
-import { WhatsappTemplatesService } from '../services/whatsapp-templates.service';
+import type { TemplateSendButtonParam } from '../utils/template-send-components';
 
 /** 100 MB absolute upload cap on our side (Meta per-type limits enforced in service). */
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -55,7 +55,6 @@ export class WhatsappMessagesController {
   constructor(
     private readonly messagesService: WhatsappMessagesService,
     private readonly sendService: WhatsappSendService,
-    private readonly templatesService: WhatsappTemplatesService,
   ) {}
 
   @Post()
@@ -156,20 +155,16 @@ export class WhatsappMessagesController {
     @Body() dto: SendMessageDto,
     @UploadedFile() headerFile?: Express.Multer.File,
   ) {
-    let headerMediaUrl = dto.headerMediaUrl;
-    if (headerFile?.buffer?.length) {
-      const { url } = await this.templatesService.uploadMediaSample(
-        ctx.workspace.id,
-        headerFile.buffer,
-        headerFile.mimetype,
-        headerFile.originalname ?? 'header',
-      );
-      headerMediaUrl = url;
-    }
     const parameters: Record<string, string>[] | undefined =
       typeof dto.parameters === 'string'
         ? (JSON.parse(dto.parameters as unknown as string) as Record<string, string>[])
         : dto.parameters;
+    const buttonParameters: TemplateSendButtonParam[] | undefined =
+      typeof dto.buttonParameters === 'string'
+        ? (JSON.parse(
+            dto.buttonParameters as unknown as string,
+          ) as TemplateSendButtonParam[])
+        : dto.buttonParameters;
     const input: SendMessageInput =
       dto.type === 'template'
         ? {
@@ -177,7 +172,17 @@ export class WhatsappMessagesController {
             templateName: dto.templateName!,
             templateLanguage: dto.templateLanguage!,
             parameters,
-            headerMediaUrl,
+            headerMediaUrl: dto.headerMediaUrl,
+            buttonParameters,
+            ...(headerFile?.buffer?.length
+              ? {
+                  headerFile: {
+                    buffer: headerFile.buffer,
+                    mimeType: headerFile.mimetype,
+                    filename: headerFile.originalname ?? 'header',
+                  },
+                }
+              : {}),
           }
         : { type: 'text', text: dto.text! };
     return this.sendService.send(

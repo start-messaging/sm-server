@@ -21,7 +21,6 @@ import { PLAN_FEATURE_KEYS } from '../../plans/plan-keys';
 import { RequiresFeature } from '../guards/requires-feature.decorator';
 import { RequiresFeatureGuard } from '../guards/requires-feature.guard';
 import { WhatsappCampaignsService } from '../services/whatsapp-campaigns.service';
-import { WhatsappConnectService } from '../services/whatsapp-connect.service';
 import { WhatsappTemplatesService } from '../services/whatsapp-templates.service';
 import { CreateCampaignDto, UpdateCampaignDto } from '../dto/campaign.dto';
 import { CampaignAudienceCsvDto } from '../dto/campaign-audience-csv.dto';
@@ -33,7 +32,6 @@ import { CampaignAudienceCsvDto } from '../dto/campaign-audience-csv.dto';
 export class WhatsappCampaignsController {
   constructor(
     private readonly campaignsService: WhatsappCampaignsService,
-    private readonly connectService: WhatsappConnectService,
     private readonly templatesService: WhatsappTemplatesService,
   ) {}
 
@@ -162,10 +160,7 @@ export class WhatsappCampaignsController {
     @Param('id') id: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
   ) {
-    const connStatus = await this.connectService.getStatus(ctx.workspace.id);
-    return this.campaignsService.launch(ctx.workspace.id, id, {
-      metaPaymentReady: connStatus.metaPaymentReady,
-    });
+    return this.campaignsService.launch(ctx.workspace.id, id);
   }
 
   @Post(':id/pause')

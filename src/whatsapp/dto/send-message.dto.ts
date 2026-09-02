@@ -34,4 +34,16 @@ export class SendMessageDto {
   @IsOptional()
   @IsUrl()
   headerMediaUrl?: string;
+
+  /**
+   * Send-time button values (dynamic URL suffix, copy-code coupon, flow token).
+   * Multipart sends this as a JSON string.
+   */
+  @IsOptional()
+  buttonParameters?: Array<{
+    index: number;
+    subType: 'url' | 'copy_code' | 'flow';
+    text?: string;
+    couponCode?: string;
+  }>;
 }

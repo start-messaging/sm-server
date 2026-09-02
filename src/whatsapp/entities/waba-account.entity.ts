@@ -160,11 +160,8 @@ export class WabaAccount extends BaseEntity {
   businessVerificationStatus!: string | null;
 
   /**
-   * Whether Meta has a conversation-billing source on the WABA
-   * (`primary_funding_id` present). Pulled from Graph on connect/sync.
-   * null = Graph has never answered (or the last refresh failed).
-   * false = no payment method — template sends will be blocked by Meta.
-   * true  = payment method present and active.
+   * Observed conversation-billing signal. Tech Providers cannot poll this
+   * on Graph. null = never observed; false = Meta rejected a send / PAYMENT_ISSUE.
    */
   @Column({ name: 'meta_payment_ready', type: 'boolean', nullable: true })
   metaPaymentReady!: boolean | null;

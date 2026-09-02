@@ -12,7 +12,6 @@ import {
 } from '../entities/wa-campaign.entity';
 import { WaContact } from '../entities/wa-contact.entity';
 import { WaMessage } from '../entities/wa-message.entity';
-import { WA_ERR } from '../whatsapp-error-codes';
 import { WA_CAMPAIGN_QUEUE } from '../queue/wa-campaign.constants';
 
 export interface CampaignAnalyticsDayPoint {
@@ -166,13 +165,7 @@ export class WhatsappCampaignsService {
     await this.campaigns.softRemove(campaign);
   }
 
-  async launch(
-    workspaceId: string,
-    id: string,
-    opts?: {
-      metaPaymentReady?: boolean | null;
-    },
-  ) {
+  async launch(workspaceId: string, id: string) {
     const campaign = await this.requireCampaign(workspaceId, id);
 
     if (campaign.status !== 'DRAFT' && campaign.status !== 'SCHEDULED') {
@@ -186,18 +179,6 @@ export class WhatsappCampaignsService {
     }
 
     // The wa_campaigns plan gate lives in RequiresFeatureGuard on the route.
-
-    // Meta payment-method gate (Tech Provider — Meta bills messages, not us)
-    if (opts?.metaPaymentReady === false) {
-      throw new AppException(
-        {
-          code: WA_ERR.META_PAYMENT_REQUIRED,
-          message:
-            'Add a payment method in WhatsApp Manager before launching a campaign. Meta bills conversations directly — this is not a CRM charge.',
-        },
-        403,
-      );
-    }
 
     // Count opted-in audience contacts (`In([])` is invalid SQL). CSV rows
     // were already opt-out-filtered on upload, so they count as-is.
