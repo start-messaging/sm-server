@@ -17,12 +17,16 @@ import type { WorkspaceContext } from '../../workspaces/guards/workspace-member.
 import { ConnectWhatsappDto } from '../dto/connect-whatsapp.dto';
 import { RegisterPhoneDto } from '../dto/register-phone.dto';
 import { WhatsappConnectService } from '../services/whatsapp-connect.service';
+import { WhatsappTemplatesService } from '../services/whatsapp-templates.service';
 
 @ApiTags('whatsapp')
 @UseInterceptors(ClassSerializerInterceptor)
 @Controller({ path: 'workspaces/:slug/whatsapp', version: '1' })
 export class WhatsappConnectController {
-  constructor(private readonly connect: WhatsappConnectService) {}
+  constructor(
+    private readonly connect: WhatsappConnectService,
+    private readonly templates: WhatsappTemplatesService,
+  ) {}
 
   /**
    * Initiate WhatsApp Embedded Signup v4 connect.
@@ -70,11 +74,15 @@ export class WhatsappConnectController {
   @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Sync WhatsApp connection status from Meta' })
-  syncFromMeta(
+  async syncFromMeta(
     @Param('slug') _slug: string,
     @CurrentWorkspace() ctx: WorkspaceContext,
   ) {
-    return this.connect.syncFromMeta(ctx.workspace.id);
+    const [status] = await Promise.all([
+      this.connect.syncFromMeta(ctx.workspace.id),
+      this.templates.syncTemplateAnalytics(ctx.workspace.id),
+    ]);
+    return status;
   }
 
   @Post('register-phone')

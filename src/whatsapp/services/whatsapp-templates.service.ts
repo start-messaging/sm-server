@@ -215,6 +215,54 @@ export class WhatsappTemplatesService {
     return { templates: templates.map(toWaTemplateDto), total };
   }
 
+  /**
+   * Pull per-template delivery/read analytics from Meta for the current month
+   * and persist them on each template row. Silently skips workspaces with no WABA
+   * or when the Graph call fails (e.g. first month with no sends yet).
+   */
+  async syncTemplateAnalytics(workspaceId: string): Promise<void> {
+    const waba = await this.wabaAccounts.findOne({
+      where: { workspaceId, serviceKey: 'whatsapp' },
+    });
+    if (!waba) return;
+
+    const token = decryptToken(waba.accessTokenEncrypted);
+    let response;
+    try {
+      response = await this.meta.getTemplateAnalytics(waba.metaWabaId, token);
+    } catch (err) {
+      this.logger.warn(
+        `[syncTemplateAnalytics] Meta API failed for ${workspaceId}: ${String(err)}`,
+      );
+      return;
+    }
+
+    for (const entry of response.data ?? []) {
+      if (!entry.template_id) continue;
+      let sent = 0;
+      let delivered = 0;
+      let read = 0;
+      for (const dp of entry.analytics?.data ?? []) {
+        sent += dp.sent ?? 0;
+        delivered += dp.delivered ?? 0;
+        read += dp.read ?? 0;
+      }
+      await this.templates.update(
+        { workspaceId, metaTemplateId: entry.template_id },
+        {
+          metaSentCount: sent,
+          metaDeliveredCount: delivered,
+          metaReadCount: read,
+          analyticsUpdatedAt: new Date(),
+        },
+      );
+    }
+
+    this.logger.log(
+      `[syncTemplateAnalytics] ${workspaceId}: updated ${(response.data ?? []).length} templates`,
+    );
+  }
+
   async uploadTemplateMedia(
     workspaceId: string,
     buffer: Buffer,

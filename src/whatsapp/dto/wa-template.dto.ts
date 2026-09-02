@@ -34,6 +34,12 @@ export class WaTemplateDto {
   carouselCardCount!: number | null;
   /** Meta quality signal: HIGH | MEDIUM | LOW. Null until the first quality webhook. */
   qualityScore!: string | null;
+  /** Rolling 30-day sent count from Meta template_analytics (null until first sync). */
+  metaSentCount!: number | null;
+  metaDeliveredCount!: number | null;
+  metaReadCount!: number | null;
+  topBlockReason!: string | null;
+  analyticsUpdatedAt!: string | null;
   createdAt!: string;
   updatedAt!: string;
 }
@@ -60,6 +66,11 @@ export function toWaTemplateDto(t: WaTemplate): WaTemplateDto {
     isCarousel: t.isCarousel,
     carouselCardCount: t.carouselCardCount,
     qualityScore: t.qualityScore,
+    metaSentCount: t.metaSentCount,
+    metaDeliveredCount: t.metaDeliveredCount,
+    metaReadCount: t.metaReadCount,
+    topBlockReason: t.topBlockReason,
+    analyticsUpdatedAt: t.analyticsUpdatedAt?.toISOString() ?? null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };

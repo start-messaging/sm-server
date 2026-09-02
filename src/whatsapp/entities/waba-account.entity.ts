@@ -19,6 +19,16 @@ export enum WabaAccountStatus {
   DISCONNECTED = 'disconnected',
 }
 
+export interface ConversationAnalyticsSnapshot {
+  /** Calendar month this snapshot covers, e.g. '2026-09'. */
+  month: string;
+  marketing: number;
+  utility: number;
+  authentication: number;
+  service: number;
+  total: number;
+}
+
 /**
  * Root of the WhatsApp vertical: one connected WhatsApp Business Account per row,
  * owned by a workspace. Persisted in the single connect transaction at the end of
@@ -180,4 +190,19 @@ export class WabaAccount extends BaseEntity {
    */
   @Column({ name: 'raw_metadata', type: 'jsonb', nullable: true })
   rawMetadata!: Record<string, unknown> | null;
+
+  /**
+   * Current-month conversation count breakdown by Meta billing category.
+   * Populated by syncFromMeta() → conversation_analytics API call.
+   * Null until the first sync after connect.
+   */
+  @Column({ name: 'conversation_analytics', type: 'jsonb', nullable: true })
+  conversationAnalytics!: ConversationAnalyticsSnapshot | null;
+
+  @Column({
+    name: 'conversation_analytics_updated_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  conversationAnalyticsUpdatedAt!: Date | null;
 }

@@ -226,4 +226,21 @@ export class WaTemplate extends BaseEntity {
    */
   @Column({ name: 'carousel_card_count', type: 'int', nullable: true })
   carouselCardCount!: number | null;
+
+  /** Rolling 30-day sent count from Meta template_analytics API. */
+  @Column({ name: 'meta_sent_count', type: 'int', nullable: true })
+  metaSentCount!: number | null;
+
+  @Column({ name: 'meta_delivered_count', type: 'int', nullable: true })
+  metaDeliveredCount!: number | null;
+
+  @Column({ name: 'meta_read_count', type: 'int', nullable: true })
+  metaReadCount!: number | null;
+
+  /** Top block reason from Meta quality_score.reasons (e.g. MISLEADING_CONTENT). */
+  @Column({ name: 'top_block_reason', type: 'varchar', length: 80, nullable: true })
+  topBlockReason!: string | null;
+
+  @Column({ name: 'analytics_updated_at', type: 'timestamptz', nullable: true })
+  analyticsUpdatedAt!: Date | null;
 }

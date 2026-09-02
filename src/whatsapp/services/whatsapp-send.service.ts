@@ -230,8 +230,34 @@ export class WhatsappSendService {
       );
       metaMessageId = result.messages[0]?.id ?? '';
     } catch (err) {
+      if (err instanceof AppException) {
+        const details = (err.getResponse() as Record<string, unknown>)
+          ?.details as { code?: number; error_subcode?: number } | undefined;
+        const c = details?.code;
+        const sub = details?.error_subcode;
+        if (
+          c === 368 ||
+          c === 131042 ||
+          c === 131047 ||
+          sub === 2388093 ||
+          sub === 2388094 ||
+          sub === 2388095
+        ) {
+          void this.wabaAccounts.update(waba.id, { metaPaymentReady: false });
+        }
+      }
       this.mapMetaSendError(err);
       throw err;
+    }
+
+    // Successful template send outside the 24-hr window means Meta accepted a
+    // business-initiated conversation charge — billing is confirmed.
+    if (
+      input.type === 'template' &&
+      !isCustomerCareWindowOpen(conversation.lastInboundAt) &&
+      waba.metaPaymentReady !== true
+    ) {
+      void this.wabaAccounts.update(waba.id, { metaPaymentReady: true });
     }
 
     const message = this.messages.create({

@@ -26,11 +26,13 @@ import { encryptToken, decryptToken } from '../crypto/token-encryption';
 import {
   PhoneNumber,
   WaPhoneNumberStatus,
+  WaQualityRating,
 } from '../entities/phone-number.entity';
 import {
   WabaAccount,
   WabaAccountStatus,
   WabaVerificationStatus,
+  type ConversationAnalyticsSnapshot,
 } from '../entities/waba-account.entity';
 import { WA_ERR } from '../whatsapp-error-codes';
 import { MetaGraphClient } from './meta-graph.client';
@@ -70,6 +72,8 @@ export interface WabaConnectionStatusResponse {
   messagingLimitPerDay: number | null;
   qualityRating: string | null;
   displayNameStatus: string | null;
+  /** Current-month conversation breakdown from Meta billing API. Null until first sync. */
+  conversationAnalytics: ConversationAnalyticsSnapshot | null;
 }
 
 const SERVICE_KEY = 'whatsapp';
@@ -342,6 +346,7 @@ export class WhatsappConnectService {
         messagingLimitPerDay: null,
         qualityRating: null,
         displayNameStatus: null,
+        conversationAnalytics: null,
       };
     }
 
@@ -367,6 +372,7 @@ export class WhatsappConnectService {
       messagingLimitPerDay: phone?.messagingLimitPerDay ?? null,
       qualityRating: phone?.qualityRating ?? null,
       displayNameStatus: phone?.displayNameStatus ?? null,
+      conversationAnalytics: waba.conversationAnalytics,
     };
   }
 
@@ -402,9 +408,106 @@ export class WhatsappConnectService {
       this.logger.log(
         `[sync] workspace ${workspaceId} retired after Meta pull-sync`,
       );
+      return this.getStatus(workspaceId);
     }
 
+    // Refresh phone health metrics (quality rating, messaging limit, name status)
+    await this.refreshPhoneHealth(waba, phone);
+
+    // Refresh conversation analytics for the current month
+    await this.refreshConversationAnalytics(waba);
+
     return this.getStatus(workspaceId);
+  }
+
+  private async refreshPhoneHealth(
+    waba: WabaAccount,
+    phone: PhoneNumber | null,
+  ): Promise<void> {
+    if (!phone) return;
+    try {
+      const token = decryptToken(waba.accessTokenEncrypted);
+      const phones = await this.meta.listPhoneNumbers(waba.metaWabaId, token);
+      const latest = phones.find((p) => p.id === phone.metaPhoneNumberId);
+      if (!latest) return;
+
+      const rawLimit = latest.whatsapp_business_manager_messaging_limit;
+      const ratingRaw = latest.quality_rating?.toUpperCase();
+      const qualityRating =
+        ratingRaw && ratingRaw in WaQualityRating
+          ? (ratingRaw.toLowerCase() as WaQualityRating)
+          : WaQualityRating.UNKNOWN;
+      await this.phoneNumbers.update(phone.id, {
+        qualityRating,
+        messagingLimitPerDay:
+          typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : undefined,
+        displayNameStatus: latest.name_status?.toUpperCase() ?? null,
+      });
+      this.logger.log(`[sync] refreshed phone health for ${waba.metaWabaId}`);
+    } catch (err) {
+      this.logger.warn(
+        `[sync] phone health refresh failed for ${waba.metaWabaId}: ${String(err)}`,
+      );
+    }
+  }
+
+  private async refreshConversationAnalytics(waba: WabaAccount): Promise<void> {
+    try {
+      const token = decryptToken(waba.accessTokenEncrypted);
+      const res = await this.meta.getConversationAnalytics(
+        waba.metaWabaId,
+        token,
+      );
+
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      const snapshot: ConversationAnalyticsSnapshot = {
+        month,
+        marketing: 0,
+        utility: 0,
+        authentication: 0,
+        service: 0,
+        total: 0,
+      };
+
+      // Meta returns either conversation_analytics.data or data depending on breakdown
+      const periods =
+        (res.conversation_analytics?.data ?? res.data) as Array<{
+          breakdown?: Array<{ conversation_category?: string; count?: number }>;
+          data_points?: Array<{ conversation_category?: string; count?: number }>;
+          conversation?: number;
+        }> | undefined;
+
+      for (const period of periods ?? []) {
+        const rows = period.breakdown ?? period.data_points ?? [];
+        for (const row of rows) {
+          const cat = row.conversation_category?.toUpperCase();
+          const count = row.count ?? 0;
+          if (cat === 'MARKETING') snapshot.marketing += count;
+          else if (cat === 'UTILITY') snapshot.utility += count;
+          else if (cat === 'AUTHENTICATION') snapshot.authentication += count;
+          else if (cat === 'SERVICE') snapshot.service += count;
+          snapshot.total += count;
+        }
+        // Fallback when no breakdown dimension — aggregate total only
+        if (!rows.length && period.conversation) {
+          snapshot.total += period.conversation;
+        }
+      }
+
+      await this.wabaAccounts.update(waba.id, {
+        conversationAnalytics: snapshot,
+        conversationAnalyticsUpdatedAt: new Date(),
+      });
+      this.logger.log(
+        `[sync] conversation analytics updated for ${waba.metaWabaId}: total=${snapshot.total}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `[sync] conversation analytics failed for ${waba.metaWabaId}: ${String(err)}`,
+      );
+    }
   }
 
   /**

@@ -178,6 +178,45 @@ export class MetaGraphClient {
     );
   }
 
+  /**
+   * Aggregate delivery, read, and sent counts per template for the last 30 days.
+   * Returns one entry per template that received sends in the period.
+   * Uses granularity=DAILY so counts reflect the full rolling window.
+   */
+  async getTemplateAnalytics(
+    wabaId: string,
+    accessToken: string,
+  ): Promise<MetaTemplateAnalyticsResponse> {
+    const now = new Date();
+    const start = Math.floor(
+      new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000,
+    );
+    const end = Math.floor(now.getTime() / 1000);
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}/template_analytics?start=${start}&end=${end}&granularity=DAILY&metric_types=["SENT","DELIVERED","READ"]`;
+    return this.get<MetaTemplateAnalyticsResponse>(url, accessToken);
+  }
+
+  /**
+   * Conversation counts by category (MARKETING / UTILITY / AUTHENTICATION / SERVICE)
+   * for the current calendar month. Used for the billing breakdown panel.
+   */
+  async getConversationAnalytics(
+    wabaId: string,
+    accessToken: string,
+  ): Promise<MetaConversationAnalyticsResponse> {
+    const now = new Date();
+    const start = Math.floor(
+      new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000,
+    );
+    const end = Math.floor(now.getTime() / 1000);
+    const url =
+      `${GRAPH_BASE}/${this.version}/${wabaId}/conversation_analytics` +
+      `?start=${start}&end=${end}&granularity=MONTHLY` +
+      `&conversation_types=["REGULAR"]` +
+      `&breakdown=["conversation_category"]`;
+    return this.get<MetaConversationAnalyticsResponse>(url, accessToken);
+  }
+
   /** Delete a template by name from the WABA. */
   async deleteTemplate(
     wabaId: string,
@@ -507,6 +546,44 @@ export interface MetaFlowInfo {
   status: 'DRAFT' | 'PUBLISHED' | 'DEPRECATED' | 'BLOCKED' | 'THROTTLED';
   categories: string[];
   validation_errors?: { error_type: string; message: string }[];
+}
+
+export interface MetaTemplateAnalyticsDataPoint {
+  sent?: number;
+  delivered?: number;
+  read?: number;
+  date_start?: string;
+  date_stop?: string;
+}
+
+export interface MetaTemplateAnalyticsEntry {
+  template_id: string;
+  analytics: { data: MetaTemplateAnalyticsDataPoint[] };
+}
+
+export interface MetaTemplateAnalyticsResponse {
+  data?: MetaTemplateAnalyticsEntry[];
+}
+
+export interface MetaConversationDataPoint {
+  conversation_category?: string;
+  conversation_type?: string;
+  count?: number;
+  cost?: string;
+}
+
+export interface MetaConversationPeriod {
+  start?: number;
+  end?: number;
+  data_points?: MetaConversationDataPoint[];
+  breakdown?: MetaConversationDataPoint[];
+  conversation?: number;
+  cost?: string;
+}
+
+export interface MetaConversationAnalyticsResponse {
+  conversation_analytics?: { data?: MetaConversationPeriod[] };
+  data?: MetaConversationPeriod[];
 }
 
 export interface MetaInteractivePayload {
