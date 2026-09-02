@@ -293,15 +293,16 @@ export class WhatsappTemplatesService {
     buffer: Buffer,
     mimeType: string,
     fileLength: number,
+    fileName: string,
   ): Promise<{ handle: string }> {
     const waba = await this.requireWaba(workspaceId);
     const token = decryptToken(waba.accessTokenEncrypted);
     const handle = await this.meta.resumableUploadTemplateMedia(
-      waba.metaWabaId,
       token,
       buffer,
       mimeType,
       fileLength,
+      fileName,
     );
     return { handle };
   }

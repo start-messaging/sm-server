@@ -13,6 +13,30 @@ import { WA_ERR } from '../whatsapp-error-codes';
 
 const GRAPH_BASE = 'https://graph.facebook.com';
 
+/** MIME types Meta accepts on /{APP_ID}/uploads for template header samples. */
+const TEMPLATE_UPLOAD_MIME: Record<string, string> = {
+  'image/jpeg': 'image/jpeg',
+  'image/jpg': 'image/jpg',
+  'image/png': 'image/png',
+  'application/pdf': 'application/pdf',
+  'video/mp4': 'video/mp4',
+};
+
+function normalizeTemplateUploadMime(mime: string): string {
+  const mapped = TEMPLATE_UPLOAD_MIME[mime.toLowerCase()];
+  if (!mapped) {
+    throw new AppException(
+      {
+        code: WA_ERR.MEDIA_UPLOAD_FAILED,
+        message:
+          'Meta only accepts JPEG, PNG, MP4, or PDF as template header samples.',
+      },
+      400,
+    );
+  }
+  return mapped;
+}
+
 interface MetaErrorResponse {
   error?: {
     message?: string;
@@ -335,22 +359,52 @@ export class MetaGraphClient {
   }
 
   /**
-   * Upload media to Meta using the Resumable Upload API.
-   * Returns the upload handle (e.g. "upload:...") used as example.header_handle.
+   * Upload media via Meta's Resumable Upload API and return the file handle
+   * (`h`) for `example.header_handle`.
+   *
+   * Session must be created on /{APP_ID}/uploads — /{WABA_ID}/uploads is not
+   * a valid edge (Graph: "object does not exist / does not support this operation").
+   * https://developers.facebook.com/docs/graph-api/guides/upload
    */
   async resumableUploadTemplateMedia(
-    wabaId: string,
     accessToken: string,
     fileBuffer: Buffer,
     mimeType: string,
     fileLength: number,
+    fileName: string,
   ): Promise<string> {
-    const sessionUrl = `${GRAPH_BASE}/${this.version}/${wabaId}/uploads?file_length=${fileLength}&file_type=${encodeURIComponent(mimeType)}&access_token=${accessToken}`;
+    if (!this.appId) {
+      throw new AppException(
+        {
+          code: WA_ERR.MEDIA_UPLOAD_FAILED,
+          message: 'META_APP_ID is not configured — cannot start a Meta upload session.',
+        },
+        500,
+      );
+    }
+
+    const fileType = normalizeTemplateUploadMime(mimeType);
+    const safeName = encodeURIComponent(fileName.replace(/[^\w.\-]+/g, '_') || 'sample');
+    const sessionUrl =
+      `${GRAPH_BASE}/${this.version}/${this.appId}/uploads` +
+      `?file_name=${safeName}` +
+      `&file_length=${fileLength}` +
+      `&file_type=${encodeURIComponent(fileType)}` +
+      `&access_token=${accessToken}`;
     const sessionRes = await fetch(sessionUrl, { method: 'POST' });
     const session = await this.parseResponse<{ id: string }>(
       sessionRes,
       sessionUrl,
     );
+    if (!session.id) {
+      throw new AppException(
+        {
+          code: WA_ERR.MEDIA_UPLOAD_FAILED,
+          message: 'Meta did not return an upload session id.',
+        },
+        502,
+      );
+    }
 
     const uploadUrl = `${GRAPH_BASE}/${this.version}/${session.id}`;
     const uploadRes = await fetch(uploadUrl, {
@@ -358,21 +412,19 @@ export class MetaGraphClient {
       headers: {
         Authorization: `OAuth ${accessToken}`,
         file_offset: '0',
-        'Content-Type': mimeType,
       },
       body: new Uint8Array(fileBuffer),
     });
-    if (!uploadRes.ok) {
-      const errBody: unknown = await uploadRes.json().catch(() => ({}));
+    const result = await this.parseResponse<{ h?: string }>(uploadRes, uploadUrl);
+    if (!result.h) {
       throw new AppException(
         {
           code: WA_ERR.MEDIA_UPLOAD_FAILED,
-          message: `Template media upload failed: ${JSON.stringify(errBody)}`,
+          message: 'Meta did not return a file handle for the uploaded sample.',
         },
         502,
       );
     }
-    const result = (await uploadRes.json()) as { h: string };
     return result.h;
   }
 

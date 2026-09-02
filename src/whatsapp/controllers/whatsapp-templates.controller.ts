@@ -90,6 +90,7 @@ export class WhatsappTemplatesController {
       file.buffer,
       file.mimetype,
       file.size,
+      file.originalname ?? 'sample',
     );
   }
 
