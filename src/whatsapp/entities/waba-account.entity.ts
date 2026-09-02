@@ -160,8 +160,9 @@ export class WabaAccount extends BaseEntity {
   businessVerificationStatus!: string | null;
 
   /**
-   * Whether Meta has confirmed a valid payment method on the WABA.
-   * null = unknown (never received a payment_configuration_update webhook yet).
+   * Whether Meta has a conversation-billing source on the WABA
+   * (`primary_funding_id` present). Pulled from Graph on connect/sync.
+   * null = Graph has never answered (or the last refresh failed).
    * false = no payment method — template sends will be blocked by Meta.
    * true  = payment method present and active.
    */

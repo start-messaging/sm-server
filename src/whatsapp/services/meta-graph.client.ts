@@ -38,7 +38,21 @@ export interface WabaInfo {
   business_verification_status?: string;
   /** Account-level health signal object from Graph. */
   health_status?: { can_send_message?: string; entities?: unknown[] };
-  payment_method_attached?: boolean;
+  /**
+   * Official conversation-billing signal. Present when a payment method (or
+   * credit line) is attached; omitted when Meta has nothing to charge.
+   * Graph types this as a numeric string.
+   */
+  primary_funding_id?: string | number;
+}
+
+/** True when Graph reports a funding source on the WABA (`primary_funding_id`). */
+export function wabaHasPaymentMethod(
+  waba: Pick<WabaInfo, 'primary_funding_id'>,
+): boolean {
+  const id = waba.primary_funding_id;
+  if (id == null) return false;
+  return String(id).trim().length > 0;
 }
 
 export interface PhoneNumberInfo {
@@ -104,7 +118,7 @@ export class MetaGraphClient {
 
   /** Fetch WABA details from the Graph API. */
   async getWaba(wabaId: string, accessToken: string): Promise<WabaInfo> {
-    const url = `${GRAPH_BASE}/${this.version}/${wabaId}?fields=id,name,business_id,currency,timezone_id,account_review_status,business_verification_status,health_status,payment_method_attached`;
+    const url = `${GRAPH_BASE}/${this.version}/${wabaId}?fields=id,name,business_id,currency,timezone_id,account_review_status,business_verification_status,health_status,primary_funding_id`;
     return this.get<WabaInfo>(url, accessToken);
   }
 

@@ -251,7 +251,8 @@ export class WaWebhookProcessor extends WorkerHost {
         this.noopField(event, 'partner_solutions');
         break;
       case WaWebhookEventType.PAYMENT_CONFIGURATION_UPDATE:
-        await this.handlePaymentConfigurationUpdate(event);
+        // Payments API (IN/BR checkout) — not conversation billing.
+        this.noopField(event, 'payment_configuration_update');
         break;
       case WaWebhookEventType.PHONE_NUMBER_NAME_UPDATE:
         await this.handlePhoneNumberNameUpdate(event);
@@ -427,51 +428,6 @@ export class WaWebhookProcessor extends WorkerHost {
     }
   }
 
-  /**
-   * payment_configuration_update — Meta sends this when the payment method
-   * linked to the WABA changes (added, removed, expired).
-   */
-  private async handlePaymentConfigurationUpdate(
-    event: WaWebhookEvent,
-  ): Promise<void> {
-    const payload = event.payload;
-    const entries = (payload['entry'] as unknown[]) ?? [];
-
-    for (const entry of entries as Array<{
-      id?: string;
-      changes?: Array<{ value?: Record<string, unknown> }>;
-    }>) {
-      const changes = entry.changes ?? [];
-      for (const change of changes) {
-        const value = change.value ?? {};
-        const metaWabaId = (value['waba_id'] as string | undefined) ?? entry.id;
-        const eventType = value['event'] as string | undefined;
-
-        if (!metaWabaId) continue;
-
-        // 'PAYMENT_METHOD_ATTACHED' | 'PAYMENT_METHOD_EXPIRED' | 'PAYMENT_METHOD_DETACHED'
-        const paymentReady =
-          eventType === 'PAYMENT_METHOD_ATTACHED'
-            ? true
-            : eventType === 'PAYMENT_METHOD_EXPIRED' ||
-                eventType === 'PAYMENT_METHOD_DETACHED'
-              ? false
-              : null;
-
-        this.logger.log(
-          `payment_configuration_update: waba=${metaWabaId} event=${eventType ?? 'unknown'} paymentReady=${String(paymentReady)}`,
-          { eventId: event.id },
-        );
-
-        if (paymentReady !== null) {
-          await this.wabaAccounts.update(
-            { metaWabaId },
-            { metaPaymentReady: paymentReady },
-          );
-        }
-      }
-    }
-  }
 
   /**
    * phone_number_name_update — Meta notifies when a number's display-name
